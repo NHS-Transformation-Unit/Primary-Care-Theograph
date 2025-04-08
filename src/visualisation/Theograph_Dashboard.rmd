@@ -477,7 +477,7 @@ output$patient_report <- renderUI({
   patient_gender <- trimws(filtered_data$Patient_Gender[1])
   
   if (!is.null(filtered_data$Patient_DOB[1]) && !is.na(filtered_data$Patient_DOB[1])) {
-    patient_dob <- as.Date(filtered_data$Patient_DOB[1], format = "%d-%m-%Y")  
+    patient_dob <- as.Date(filtered_data$Patient_DOB[1], format = "%Y-%m-%d")  
   } else {
     patient_dob <- NA
   }
@@ -552,7 +552,7 @@ output$patient_report <- renderUI({
 
   report <- HTML(paste("<strong>Patient Name:</strong>", patient_name, "<br>",
                        "<strong>Sex:</strong>", patient_gender, "<br>",
-                       "<strong>Date of Birth:</strong>", ifelse(!is.na(patient_dob), format(patient_dob, "%d-%m-%Y"), "Unknown"), "<br>",
+                       "<strong>Date of Birth:</strong>", ifelse(!is.na(patient_dob), format(patient_dob, "%d/%m/%Y"), "Unknown"), "<br>",
                        "<strong>Age:</strong>", patient_age, "years", "<br>",
                        "<strong>Diagnosis:</strong>", diagnosis_report, "<br>",
                        "<strong>Prescription(s):</strong>", prescription_report))

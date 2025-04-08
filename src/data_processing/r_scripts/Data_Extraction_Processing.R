@@ -328,9 +328,11 @@ Pt_Proc_Wide <- Pt_Proc_Long %>%
   select(-c(5:9))
 
 Pt_Proc_Wide$Contact_Event_Date <- as.Date(Pt_Proc_Wide$Contact_Event_Date, format = "%d/%m/%Y")
+Pt_Proc_Wide$Patient_DOB <- as.Date(Pt_Proc_Wide$Patient_DOB, format = "%d/%m/%Y")
 
 # Now, reformat it explicitly to the required format as a character string
 Pt_Proc_Wide$Contact_Event_Date <- format(Pt_Proc_Wide$Contact_Event_Date, "%Y-%m-%d")
+Pt_Proc_Wide$Patient_DOB <- format(Pt_Proc_Wide$Patient_DOB, "%Y-%m-%d")
 
 # Check if the transformation was successful
 str(Pt_Proc_Wide)
