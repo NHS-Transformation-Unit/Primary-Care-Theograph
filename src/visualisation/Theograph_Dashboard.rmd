@@ -95,32 +95,6 @@ Pt_Proc_Wide <- read_excel(here("data", "processed_extracts", "Proc_Patient_Extr
 
 patient_names <- unique(Pt_Proc_Wide$Patient_Name)
 
-# Creating series to call within the visualisation selection drop down
-
-clean_column <- function(column) {
-  unique_values <- unique(column)
-  unique_values <- unique_values[!is.na(unique_values) & trimws(tolower(unique_values)) != "na"]
-  return(unique_values)
-}
-
-unique_diagnoses_1 <- clean_column(Pt_Proc_Wide$Diagnosis_1)
-unique_diagnoses_2 <- clean_column(Pt_Proc_Wide$Diagnosis_2)
-unique_biomedical_tests_1 <- clean_column(Pt_Proc_Wide$Biomedical_Test_1)
-unique_biomedical_tests_2 <- clean_column(Pt_Proc_Wide$Biomedical_Test_2)
-unique_drug_names_1 <- clean_column(Pt_Proc_Wide$Drug_Name_1)
-unique_drug_names_2 <- clean_column(Pt_Proc_Wide$Drug_Name_2)
-
-Visualisation_choices <- c(
-  unique_diagnoses_1, 
-  unique_diagnoses_2, 
-  unique_biomedical_tests_1, 
-  unique_biomedical_tests_2, 
-  unique_drug_names_1, 
-  unique_drug_names_2
-)
-
-Visualisation_choices <- sort(unique(Visualisation_choices))
-
 ```
 
 ```{r logo, echo = FALSE}
@@ -294,13 +268,31 @@ ui <- fluidPage(
       p("This section allows you to search for a patient using given name or surname."),
       selectInput("patient_names", "Select Patient name:", choices = patient_names)  
     ),
-    column(
-      width = 3,
-      h3("Visualisation selection"),
-      hr(),
-      p("This section allows you to select which visualisations you wish to view for the selected patient."),
-      selectInput("visualisation_selection", "Select Visualisation:", choices = c("All Plots"))  
-    ),
+  column(
+  width = 3,
+  h3("Visualisation filters"),
+  hr(),
+  p("Pick any mix of diagnoses, biomedical tests, and drugs to show."),
+  selectizeInput(
+    "dx_filter",
+    "Diagnoses",
+    choices = NULL, multiple = TRUE,
+    options = list(placeholder = "All diagnoses")
+  ),
+  selectizeInput(
+    "lab_filter",
+    "Biomedical tests / assays",
+    choices = NULL, multiple = TRUE,
+    options = list(placeholder = "All tests")
+  ),
+  selectizeInput(
+    "drug_filter",
+    "Drugs",
+    choices = NULL, multiple = TRUE,
+    options = list(placeholder = "All drugs")
+  )
+)
+,
     column(
       width = 3,
       h3("Patient information"),
@@ -340,23 +332,23 @@ server <- function(input, output, session) {
   
   # Updating the available Visualisation list based on selected patient
   
-  observeEvent(input$patient_names, {
-    selected_patient_data <- Pt_Wide_reactive()
-    
-    available_Visualisations <- unique(c(
-      selected_patient_data$Diagnosis_1, 
-      selected_patient_data$Diagnosis_2,
-      selected_patient_data$Biomedical_Test_1, 
-      selected_patient_data$Biomedical_Test_2,
-      selected_patient_data$Drug_Name_1, 
-      selected_patient_data$Drug_Name_2
-    ))
-    
-    available_Visualisations <- available_Visualisations[!is.na(available_Visualisations) & 
-                                                       trimws(tolower(available_Visualisations)) != "na"]
-  
-    updateSelectInput(session, "visualisation_selection", choices = c("All Plots", available_Visualisations))
-  })
+  # Populate the three multi-selects when a patient is chosen
+observeEvent(input$patient_names, {
+  d <- Pt_Wide_reactive()
+
+  dx_choices <- sort(unique(c(d$Diagnosis_1, d$Diagnosis_2)))
+  dx_choices <- dx_choices[!is.na(dx_choices) & dx_choices != ""]
+  updateSelectizeInput(session, "dx_filter", choices = dx_choices, server = TRUE)
+
+  lab_choices <- sort(unique(c(d$Biomedical_Test_1, d$Biomedical_Test_2)))
+  lab_choices <- lab_choices[!is.na(lab_choices) & lab_choices != ""]
+  updateSelectizeInput(session, "lab_filter", choices = lab_choices, server = TRUE)
+
+  drug_choices <- sort(unique(c(d$Drug_Name_1, d$Drug_Name_2)))
+  drug_choices <- drug_choices[!is.na(drug_choices) & drug_choices != ""]
+  updateSelectizeInput(session, "drug_filter", choices = drug_choices, server = TRUE)
+})
+
 
   # Rendering the combined plot based on selected visualisation
   
