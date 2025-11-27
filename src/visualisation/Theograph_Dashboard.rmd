@@ -8,8 +8,6 @@ output:
 runtime: shiny
 ---
 
-<!-- Adding in CSS file due to inability of shiny app to load in external CSS themes -->
-
 <style>
 /* Cerulean Theme CSS */
 
@@ -216,13 +214,12 @@ create_diagnosis_plot <- function(data, date_col, diagnosis_col, vis_colour) {
   })
 }
 
-# UI for the Theograph shiny application
+# UI
 
-# UI for the Theograph shiny application
 ui <- navbarPage(
   title = "Primary Care Timeline Tool",
   id = "main_nav",
-  inverse = FALSE, # keep your Cerulean-ish styling
+  inverse = FALSE,
   header = tags$head(
     tags$style(HTML("
       body {
@@ -252,7 +249,7 @@ ui <- navbarPage(
 
     hr(),
 
-    # ----------------- ROW 1 -----------------
+    # ROW 1
     fluidRow(
       column(
         width = 3,
@@ -285,16 +282,16 @@ ui <- navbarPage(
       )
     ),
 
-    # ----------------- ROW 2 -----------------
+    # ROW 2 
     fluidRow(
       width = 12,
-      h3("Primary Care Timeline Tool"),  # (renamed heading)
+      h3("Primary Care Timeline Tool"),
       hr(),
       p("The time series below visualises the patient's GP contact history, displaying diagnoses, prescriptions, and assay results."),
       div(class = "plot-outer", uiOutput("combined_plot_ui"))
     ),
 
-    # ----------------- ROW 3 -----------------
+    # ROW 3 
     fluidRow(
       column(
         width = 3,
@@ -303,12 +300,12 @@ ui <- navbarPage(
         p("Please use the button below to download the patient's entire GP event history as an Excel workbook file."),
         downloadButton("downloadData", label = "Download patient data", class = "btn-download")
       ),
-      column(width = 9) # empty space to keep the row neat, optional
+      column(width = 9)
     )
   )
 ),
 
-  # ----------------- TAB 2: User Guidance -----------------
+  # User Guidance 
   tabPanel(
     title = "User Guidance",
     fluidPage(
@@ -332,11 +329,11 @@ ui <- navbarPage(
 )
 
 
-# Server functionality for the Theograph shiny application
+# Server
 
 server <- function(input, output, session) {
 
-  # Reactive expression to filter data by selected patient
+# Reactive expression to filter data by selected patient
   
   Pt_Wide_reactive <- reactive({
     req(input$patient_names)
@@ -362,10 +359,10 @@ server <- function(input, output, session) {
 })
 
   
-  # Updating the available Visualisation list based on selected patient
+# Updating the available Visualisation list based on selected patient
   
-  # Populate the three multi-selects when a patient is chosen
-# ---- Reactive choices (replace the old observer) ----
+# Populating the three multi-selects when a patient is chosen
+
 dx_choices <- reactive({
   d <- Pt_Wide_reactive()
   ch <- sort(unique(c(d$Diagnosis_1, d$Diagnosis_2)))
@@ -384,7 +381,8 @@ drug_choices <- reactive({
   ch[!is.na(ch) & ch != ""]
 })
 
-# ---- Render the three filter UIs ----
+# Rendering the three filter UIs
+
 output$dx_filter_ui <- renderUI({
   ch <- dx_choices()
   if (length(ch) == 0) {
@@ -428,7 +426,7 @@ combined_height <- reactive({
   d <- Pt_Wide_reactive()
   if (nrow(d) == 0) return(300)
 
-  # apply the same OR-filter logic you use in renderPlotly
+# applying the same OR-filter logic used in renderPlotly
   sel_dx   <- input$dx_filter
   sel_lab  <- input$lab_filter
   sel_drug <- input$drug_filter
@@ -441,7 +439,7 @@ combined_height <- reactive({
   d <- if (!any_selected) d else d[dx_keep | lab_keep | drug_keep, , drop = FALSE]
   if (nrow(d) == 0) return(300)
 
-  # mirror your plot-list/null-filtering to count panels
+# mirroring plot-list/null-filtering to count panels
   plots <- list(
     create_diagnosis_plot(d, "Contact_Event_Date", "Diagnosis_1", "#fa5c5c"),
     create_diagnosis_plot(d, "Contact_Event_Date", "Diagnosis_2", "#36a358"),
@@ -461,7 +459,7 @@ output$combined_plot_ui <- renderUI({
   plotlyOutput("combined_plot", height = paste0(combined_height(), "px"), width = "100%")
 })
 
-  # Rendering the combined plot based on selected visualisation
+# Rendering the combined plot based on selected visualisation
   
 output$combined_plot <- renderPlotly({
   filtered_data <- Pt_Wide_reactive()
@@ -470,9 +468,6 @@ output$combined_plot <- renderPlotly({
     return(NULL)
   }
 
-  # OR-logic row filter across categories:
-  # If a category has selections, keep rows that match that category.
-  # If ALL categories are empty, keep everything.
   n <- nrow(filtered_data)
 
   sel_dx   <- input$dx_filter
@@ -519,7 +514,8 @@ output$combined_plot <- renderPlotly({
     return("Unknown Value")
   }
 
-  # Creating the time series plots
+# Creating the time series plots
+  
   plot_list <- list(
     create_diagnosis_plot(filtered_data, "Contact_Event_Date", "Diagnosis_1", "#fa5c5c"),
     create_diagnosis_plot(filtered_data, "Contact_Event_Date", "Diagnosis_2", "#36a358"),
@@ -529,7 +525,8 @@ output$combined_plot <- renderPlotly({
     create_time_series_plot(filtered_data, "Contact_Event_Date", "Drug_2_Value", "Drug_Name_2", "Drug_2_Units", "#ff9933")
   )
 
-  # Creating the time series labels
+# Creating the time series labels
+  
   label_list <- list(
     create_dynamic_label(filtered_data, test_col = "Diagnosis_1", unit_col = "", is_test = TRUE),
     create_dynamic_label(filtered_data, test_col = "Diagnosis_2", unit_col = "", is_test = TRUE),
@@ -539,7 +536,8 @@ output$combined_plot <- renderPlotly({
     create_dynamic_label(filtered_data, drug_col = "Drug_Name_2", drug_unit_col = "Drug_2_Units", is_test = FALSE)
   )
 
-  # Filtering out any null plots
+# Filtering out any null plots
+  
   valid_plots  <- Filter(Negate(is.null), plot_list)
   valid_labels <- label_list[!sapply(plot_list, is.null)]
 
@@ -548,11 +546,10 @@ output$combined_plot <- renderPlotly({
     return(NULL)
   }
 
-  # Creating the combined plot output
-# Creating the combined plot output with fixed per-panel height
-# Tune these two numbers to taste
-per_panel_height <- 180   # px per subplot
-base_margin_px   <- 100   # extra headroom for titles/annotations
+# Creating the combined plot output
+
+per_panel_height <- 180
+base_margin_px   <- 100 
 
 n_panels <- length(valid_plots)
 total_height <- max(200, n_panels * per_panel_height + base_margin_px)
