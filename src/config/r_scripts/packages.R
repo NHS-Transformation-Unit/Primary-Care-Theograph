@@ -12,6 +12,7 @@ packages <- c("here",
               "DT", 
               "shiny",
               "fastmap",
-              "rlang")
+              "rlang",
+              "base64enc")
 
 lapply(packages, library, character.only=TRUE)
