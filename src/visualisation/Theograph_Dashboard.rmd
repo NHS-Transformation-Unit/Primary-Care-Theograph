@@ -203,6 +203,8 @@ create_time_series_plot <- function(data, date_col, y_col, test_col, unit_col, v
 
     data <- data[!is.na(data[[y_col]]), ]
 
+    if (nrow(data) == 0) return(NULL)
+
     data$tooltip_text <- paste0(
       "Date: ", format(data[[date_col]], "%d/%m/%Y"), "<br>",
       data[[test_col]], ": ", data[[y_col]], " ", data[[unit_col]]
@@ -236,6 +238,8 @@ create_diagnosis_plot <- function(data, date_col, diagnosis_col, vis_colour) {
     }
 
     data <- data[!is.na(data[[diagnosis_col]]), ]
+
+    if (nrow(data) == 0) return(NULL)
 
     data$tooltip_text <- paste0(
       "Date: ", format(data[[date_col]], "%d/%m/%Y"), "<br>",
@@ -507,6 +511,28 @@ tabPanel(
 
 # Server
 
+
+
+# Helper: build dynamic y-axis labels for plots (diagnoses/tests vs drugs)
+create_dynamic_label <- function(data, test_col = NULL, unit_col = NULL, drug_col = NULL, drug_unit_col = NULL, is_test = TRUE) {
+    if (is_test) {
+      first_non_na_test <- data[[test_col]][!is.na(data[[test_col]])][1]
+      first_non_na_unit <- if (!is.null(unit_col) && unit_col != "" && unit_col %in% names(data)) data[[unit_col]][!is.na(data[[unit_col]])][1] else NA
+      if (!is.na(first_non_na_test)) {
+        if (!is.null(first_non_na_unit) && !is.na(first_non_na_unit)) return(paste(first_non_na_test, "<br>", first_non_na_unit))
+        return(first_non_na_test)
+      }
+    } else {
+      first_non_na_drug <- data[[drug_col]][!is.na(data[[drug_col]])][1]
+      first_non_na_drug_unit <- data[[drug_unit_col]][!is.na(data[[drug_unit_col]])][1]
+      if (!is.na(first_non_na_drug)) {
+        if (!is.null(first_non_na_drug_unit) && !is.na(first_non_na_drug_unit)) return(paste(first_non_na_drug, "<br>", first_non_na_drug_unit))
+        return(first_non_na_drug)
+      }
+    }
+    return("Unknown Value")
+  }
+
 server <- function(input, output, session) {
 
   checkboxGroupHTML <- function(inputId, label, choiceValues, choiceLabels, selected = choiceValues) {
@@ -543,8 +569,8 @@ server <- function(input, output, session) {
     req(input$patient_names)
     Pt_Proc_Wide %>%
       filter(Patient_Name == input$patient_names) %>%
-      mutate(Contact_Event_Date = as.Date(Contact_Event_Date, format = "%Y-%m-%d")) 
-  })
+      mutate(Contact_Event_Date = suppressWarnings(as.Date(gsub("/", "-", as.character(Contact_Event_Date)), format = "%Y-%m-%d")))
+})
   
 
   # Summary tables
@@ -565,8 +591,12 @@ server <- function(input, output, session) {
       dplyr::distinct(Contact_Event_Date, Diagnosis) %>%
       dplyr::arrange(Contact_Event_Date)
 
-    if (!is.null(input$dx_filter) && length(input$dx_filter) > 0) {
-      dx <- dx %>% dplyr::filter(Diagnosis %in% input$dx_filter)
+    if (!is.null(input$dx_filter)) {
+      if (length(input$dx_filter) == 0) {
+        dx <- dx[0, , drop = FALSE]
+      } else {
+        dx <- dx %>% dplyr::filter(Diagnosis %in% input$dx_filter)
+      }
     }
 
     dx
@@ -599,8 +629,12 @@ server <- function(input, output, session) {
       distinct() %>%
       arrange(Contact_Event_Date)
 
-    if (!is.null(input$drug_filter) && length(input$drug_filter) > 0) {
-      out <- out %>% filter(Drug %in% input$drug_filter)
+    if (!is.null(input$drug_filter)) {
+      if (length(input$drug_filter) == 0) {
+        out <- out[0, , drop = FALSE]
+      } else {
+        out <- out %>% filter(Drug %in% input$drug_filter)
+      }
     }
 
     out
@@ -633,8 +667,12 @@ server <- function(input, output, session) {
       distinct() %>%
       arrange(Contact_Event_Date)
 
-    if (!is.null(input$lab_filter) && length(input$lab_filter) > 0) {
-      out <- out %>% filter(Test %in% input$lab_filter)
+    if (!is.null(input$lab_filter)) {
+      if (length(input$lab_filter) == 0) {
+        out <- out[0, , drop = FALSE]
+      } else {
+        out <- out %>% filter(Test %in% input$lab_filter)
+      }
     }
 
     out
@@ -854,133 +892,232 @@ drug_choices <- reactive({
 # Rendering the three filter UIs
 
 output$dx_filter_ui <- renderUI({
+  d <- Pt_Wide_reactive()
+
+  if (nrow(d) == 0) {
+    return(div(
+      h4("Diagnoses"),
+      hr(),
+      checkboxGroupInput("dx_filter", label = NULL, choices = character(0), selected = character(0))
+    ))
+  }
+
+  dx_long <- d %>%
+    dplyr::select(Contact_Event_Date, Diagnosis_1, Diagnosis_2) %>%
+    tidyr::pivot_longer(
+      cols = dplyr::starts_with("Diagnosis_"),
+      names_to = "src",
+      values_to = "Diagnosis"
+    ) %>%
+    dplyr::filter(!is.na(Diagnosis), Diagnosis != "") %>%
+    dplyr::mutate(Contact_Event_Date = suppressWarnings(as.Date(Contact_Event_Date))) %>%
+    dplyr::group_by(Diagnosis) %>%
+    dplyr::summarise(first_date = min(Contact_Event_Date, na.rm = TRUE), .groups = "drop") %>%
+    dplyr::arrange(Diagnosis)
+
+  ch <- dx_long$Diagnosis
+  dates <- dx_long$first_date
+
+  choice_names <- lapply(seq_along(ch), function(i) {
+    dt <- dates[[i]]
+    dt_txt <- if (!is.na(dt)) format(dt, "%d %b %Y") else ""
+    htmltools::HTML(paste0(htmltools::htmlEscape(ch[[i]]), "&nbsp;&nbsp;<em>", dt_txt, "</em>"))
+  })
+
+  div(
+    h4("Diagnoses"),
+    hr(),
+    checkboxGroupInput(
+      inputId      = "dx_filter",
+      label        = NULL,
+      choiceNames  = choice_names,
+      choiceValues = ch,
+      selected     = ch
+    )
+  )
+})
+
+output$lab_filter_ui <- renderUI({
+  d <- Pt_Wide_reactive()
+
+  if (nrow(d) == 0) {
+    return(div(
+      h4("Biomedical tests / assays"),
+      hr(),
+      checkboxGroupInput("lab_filter", label = NULL, choices = character(0), selected = character(0))
+    ))
+  }
+
+  lab_long <- d %>%
+    dplyr::select(Contact_Event_Date, Biomedical_Test_1, Biomedical_Test_2) %>%
+    tidyr::pivot_longer(
+      cols = c(Biomedical_Test_1, Biomedical_Test_2),
+      names_to = "Test_Number",
+      values_to = "Test"
+    ) %>%
+    dplyr::filter(!is.na(Test), Test != "") %>%
+    dplyr::mutate(Contact_Event_Date = suppressWarnings(as.Date(Contact_Event_Date))) %>%
+    dplyr::group_by(Test) %>%
+    dplyr::summarise(
+      date_of_latest = if (all(is.na(Contact_Event_Date))) as.Date(NA) else max(Contact_Event_Date, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    dplyr::arrange(Test)
+
+  ch <- lab_long$Test
+  dates <- lab_long$date_of_latest
+
+  choice_names <- lapply(seq_along(ch), function(i) {
+    dt <- dates[[i]]
+    dt_txt <- if (!is.na(dt)) format(dt, "%d %b %Y") else ""
+    htmltools::HTML(paste0(htmltools::htmlEscape(ch[[i]]), "&nbsp;&nbsp;<em>", dt_txt, "</em>"))
+  })
+
+  div(
+    h4("Biomedical tests / assays"),
+    hr(),
+    checkboxGroupInput(
+      inputId      = "lab_filter",
+      label        = NULL,
+      choiceNames  = choice_names,
+      choiceValues = ch,
+      selected     = ch
+    )
+  )
+})
+
+output$drug_filter_ui <- renderUI({
+  d <- Pt_Wide_reactive()
+
+  if (nrow(d) == 0) {
+    return(div(
+      h4("Drugs"),
+      hr(),
+      checkboxGroupInput("drug_filter", label = NULL, choices = character(0), selected = character(0))
+    ))
+  }
+
+  rx_long <- dplyr::bind_rows(
+    tibble::tibble(Contact_Event_Date = d$Contact_Event_Date, Drug = d$Drug_Name_1),
+    tibble::tibble(Contact_Event_Date = d$Contact_Event_Date, Drug = d$Drug_Name_2)
+  ) %>%
+    dplyr::filter(!is.na(Drug), Drug != "") %>%
+    dplyr::mutate(Contact_Event_Date = suppressWarnings(as.Date(Contact_Event_Date))) %>%
+    dplyr::group_by(Drug) %>%
+    dplyr::summarise(first_date = min(Contact_Event_Date, na.rm = TRUE), .groups = "drop") %>%
+    dplyr::arrange(Drug)
+
+  ch <- rx_long$Drug
+  dates <- rx_long$first_date
+
+  choice_names <- lapply(seq_along(ch), function(i) {
+    dt <- dates[[i]]
+    dt_txt <- if (!is.na(dt)) format(dt, "%d %b %Y") else ""
+    htmltools::HTML(paste0(htmltools::htmlEscape(ch[[i]]), "&nbsp;&nbsp;<em>", dt_txt, "</em>"))
+  })
+
+  div(
+    h4("Drugs"),
+    hr(),
+    checkboxGroupInput(
+      inputId      = "drug_filter",
+      label        = NULL,
+      choiceNames  = choice_names,
+      choiceValues = ch,
+      selected     = ch
+    )
+  )
+})
+
+# Reset filters when the patient changes (Shiny otherwise preserves previous selections,
+  # which can leave everything unchecked when the choice lists change).
+  observeEvent(Pt_Wide_reactive(), {
     d <- Pt_Wide_reactive()
 
-    dx_long <- d %>%
+    # Diagnoses (first recorded date)
+    dx_choices <- d %>%
       dplyr::select(Contact_Event_Date, Diagnosis_1, Diagnosis_2) %>%
-      tidyr::pivot_longer(
-        cols = dplyr::starts_with("Diagnosis_"),
-        names_to = "src",
-        values_to = "Diagnosis"
-      ) %>%
+      tidyr::pivot_longer(cols = c(Diagnosis_1, Diagnosis_2), values_to = "Diagnosis") %>%
       dplyr::filter(!is.na(Diagnosis), Diagnosis != "") %>%
-      dplyr::mutate(Contact_Event_Date = as.Date(Contact_Event_Date)) %>%
+      dplyr::mutate(Contact_Event_Date = suppressWarnings(as.Date(Contact_Event_Date))) %>%
       dplyr::group_by(Diagnosis) %>%
-      dplyr::summarise(first_date = min(Contact_Event_Date, na.rm = TRUE), .groups = "drop") %>%
+      dplyr::summarise(
+        date_of_first = if (all(is.na(Contact_Event_Date))) as.Date(NA) else min(Contact_Event_Date, na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
       dplyr::arrange(Diagnosis)
 
-    ch <- dx_long$Diagnosis
-    dates <- dx_long$first_date
+    shiny::updateCheckboxGroupInput(
+      session,
+      "dx_filter",
+      selected = if (nrow(dx_choices) > 0) dx_choices$Diagnosis else character(0)
+    )
 
-    labels <- lapply(seq_along(ch), function(i) {
-      dt <- dates[[i]]
-      dt_txt <- if (!is.na(dt)) format(dt, "%d %b %Y") else ""
-      htmltools::HTML(paste0(htmltools::htmlEscape(ch[[i]]), "&nbsp;&nbsp;<em>", dt_txt, "</em>"))
-    })
-
-    checkboxGroupHTML("dx_filter", "Diagnoses", ch, labels, selected = ch)
-  })
-
-  output$lab_filter_ui <- renderUI({
-    d <- Pt_Wide_reactive()
-
-    # Building tabular view of patient data
-    
-    lab_table_data <- d %>%
-      dplyr::select(Contact_Event_Date, Biomedical_Test_1, Biomedical_Test_2, Biomedical_Test_1_Value, Biomedical_Test_2_Value, Biomedical_Test_1_Unit, Biomedical_Test_2_Unit) %>%
-      tidyr::pivot_longer(
-        cols = c(Biomedical_Test_1, Biomedical_Test_2),
-        names_to = "Test_Number",
-        values_to = "Test",
-        values_drop_na = TRUE
-      ) %>%
-      dplyr::mutate(
-        Value = dplyr::if_else(Test_Number == "Biomedical_Test_1", Biomedical_Test_1_Value, Biomedical_Test_2_Value),
-        Unit  = dplyr::if_else(Test_Number == "Biomedical_Test_1", Biomedical_Test_1_Unit,  Biomedical_Test_2_Unit)
-      ) %>%
-      dplyr::filter(!is.na(Test), Test != "")
-
-    choice_vals <- sort(unique(lab_table_data$Test))
-    if (length(choice_vals) == 0) {
-      return(NULL)
-    }
-
-    latest_dates <- lab_table_data %>%
+    # Biomedical tests / assays (latest recorded date)
+    lab_choices <- d %>%
+      dplyr::select(Contact_Event_Date, Biomedical_Test_1, Biomedical_Test_2) %>%
+      tidyr::pivot_longer(cols = c(Biomedical_Test_1, Biomedical_Test_2), values_to = "Test") %>%
+      dplyr::filter(!is.na(Test), Test != "") %>%
+      dplyr::mutate(Contact_Event_Date = suppressWarnings(as.Date(Contact_Event_Date))) %>%
       dplyr::group_by(Test) %>%
       dplyr::summarise(
-        latest_date = if (all(is.na(Contact_Event_Date))) as.Date(NA) else max(Contact_Event_Date, na.rm = TRUE),
+        date_of_latest = if (all(is.na(Contact_Event_Date))) as.Date(NA) else max(Contact_Event_Date, na.rm = TRUE),
         .groups = "drop"
-      )
+      ) %>%
+      dplyr::arrange(Test)
 
-    labels <- lapply(choice_vals, function(test) {
-      dt <- latest_dates$latest_date[match(test, latest_dates$Test)]
-      dt_txt <- if (!is.na(dt)) format(dt, "%d %b %Y") else ""
+    shiny::updateCheckboxGroupInput(
+      session,
+      "lab_filter",
+      selected = if (nrow(lab_choices) > 0) lab_choices$Test else character(0)
+    )
 
-      if (dt_txt == "") {
-        tagList(test)
-      } else {
-        tagList(
-          test,
-          span(style = "margin-left: 10px; font-style: italic;", dt_txt)
-        )
-      }
-    })
-
-    checkboxGroupHTML("lab_filter", "Biomedical tests / assays", choice_vals, labels, selected = choice_vals)
-  })
-
-  output$drug_filter_ui <- renderUI({
-    d <- Pt_Wide_reactive()
-
-    rx_long <- dplyr::bind_rows(
-      tibble::tibble(Contact_Event_Date = d$Contact_Event_Date, Drug = d$Drug_Name_1),
-      tibble::tibble(Contact_Event_Date = d$Contact_Event_Date, Drug = d$Drug_Name_2)
-    ) %>%
+    # Prescriptions (first recorded date)
+    rx_choices <- d %>%
+      dplyr::select(Contact_Event_Date, Drug_Name_1, Drug_Name_2) %>%
+      tidyr::pivot_longer(cols = c(Drug_Name_1, Drug_Name_2), values_to = "Drug") %>%
       dplyr::filter(!is.na(Drug), Drug != "") %>%
-      dplyr::mutate(Contact_Event_Date = as.Date(Contact_Event_Date)) %>%
+      dplyr::mutate(Contact_Event_Date = suppressWarnings(as.Date(Contact_Event_Date))) %>%
       dplyr::group_by(Drug) %>%
-      dplyr::summarise(first_date = min(Contact_Event_Date, na.rm = TRUE), .groups = "drop") %>%
+      dplyr::summarise(
+        date_of_first = if (all(is.na(Contact_Event_Date))) as.Date(NA) else min(Contact_Event_Date, na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
       dplyr::arrange(Drug)
 
-    ch <- rx_long$Drug
-    dates <- rx_long$first_date
+    shiny::updateCheckboxGroupInput(
+      session,
+      "drug_filter",
+      selected = if (nrow(rx_choices) > 0) rx_choices$Drug else character(0)
+    )
+  }, ignoreInit = FALSE)
 
-    labels <- lapply(seq_along(ch), function(i) {
-      dt <- dates[[i]]
-      dt_txt <- if (!is.na(dt)) format(dt, "%d %b %Y") else ""
-      htmltools::HTML(paste0(htmltools::htmlEscape(ch[[i]]), "&nbsp;&nbsp;<em>", dt_txt, "</em>"))
-    })
-
-    checkboxGroupHTML("drug_filter", "Drugs", ch, labels, selected = ch)
-  })
-
-  combined_height <- reactive({
+combined_height <- reactive({
   d <- Pt_Wide_reactive()
   if (nrow(d) == 0) return(300)
 
-# applying the same OR-filter logic used in renderPlotly
-  sel_dx   <- input$dx_filter
-  sel_lab  <- input$lab_filter
-  sel_drug <- input$drug_filter
+  sel_dx   <- if (is.null(input$dx_filter))   character(0) else input$dx_filter
+  sel_lab  <- if (is.null(input$lab_filter))  character(0) else input$lab_filter
+  sel_drug <- if (is.null(input$drug_filter)) character(0) else input$drug_filter
 
-  n <- nrow(d)
-  dx_keep   <- if (is.null(sel_dx)   || length(sel_dx)   == 0) rep(FALSE, n) else (d$Diagnosis_1 %in% sel_dx | d$Diagnosis_2 %in% sel_dx)
-  lab_keep  <- if (is.null(sel_lab)  || length(sel_lab)  == 0) rep(FALSE, n) else (d$Biomedical_Test_1 %in% sel_lab | d$Biomedical_Test_2 %in% sel_lab)
-  drug_keep <- if (is.null(sel_drug) || length(sel_drug) == 0) rep(FALSE, n) else (d$Drug_Name_1 %in% sel_drug | d$Drug_Name_2 %in% sel_drug)
-  any_selected <- (!is.null(sel_dx) && length(sel_dx) > 0) || (!is.null(sel_lab) && length(sel_lab) > 0) || (!is.null(sel_drug) && length(sel_drug) > 0)
-  d <- if (!any_selected) d else d[dx_keep | lab_keep | drug_keep, , drop = FALSE]
-  if (nrow(d) == 0) return(300)
+  dx1_d <- if (length(sel_dx) > 0)   d %>% dplyr::filter(Diagnosis_1 %in% sel_dx) else d[0, , drop = FALSE]
+  dx2_d <- if (length(sel_dx) > 0)   d %>% dplyr::filter(Diagnosis_2 %in% sel_dx) else d[0, , drop = FALSE]
+  l1_d  <- if (length(sel_lab) > 0)  d %>% dplyr::filter(Biomedical_Test_1 %in% sel_lab) else d[0, , drop = FALSE]
+  l2_d  <- if (length(sel_lab) > 0)  d %>% dplyr::filter(Biomedical_Test_2 %in% sel_lab) else d[0, , drop = FALSE]
+  r1_d  <- if (length(sel_drug) > 0) d %>% dplyr::filter(Drug_Name_1 %in% sel_drug) else d[0, , drop = FALSE]
+  r2_d  <- if (length(sel_drug) > 0) d %>% dplyr::filter(Drug_Name_2 %in% sel_drug) else d[0, , drop = FALSE]
 
-# mirroring plot-list/null-filtering to count panels
   plots <- list(
-    create_diagnosis_plot(d, "Contact_Event_Date", "Diagnosis_1", "#fa5c5c"),
-    create_diagnosis_plot(d, "Contact_Event_Date", "Diagnosis_2", "#36a358"),
-    create_time_series_plot(d, "Contact_Event_Date", "Biomedical_Value_1", "Biomedical_Test_1", "Biomedical_1_Units", "#407EC9"),
-    create_time_series_plot(d, "Contact_Event_Date", "Biomedical_Value_2", "Biomedical_Test_2", "Biomedical_2_Units", "#407EC9"),
-    create_time_series_plot(d, "Contact_Event_Date", "Drug_1_Value", "Drug_Name_1", "Drug_1_Units", "#ff9933"),
-    create_time_series_plot(d, "Contact_Event_Date", "Drug_2_Value", "Drug_Name_2", "Drug_2_Units", "#ff9933")
+    create_diagnosis_plot(dx1_d, "Contact_Event_Date", "Diagnosis_1", "#fa5c5c"),
+    create_diagnosis_plot(dx2_d, "Contact_Event_Date", "Diagnosis_2", "#36a358"),
+    create_time_series_plot(l1_d, "Contact_Event_Date", "Biomedical_Value_1", "Biomedical_Test_1", "Biomedical_1_Units", "#407EC9"),
+    create_time_series_plot(l2_d, "Contact_Event_Date", "Biomedical_Value_2", "Biomedical_Test_2", "Biomedical_2_Units", "#407EC9"),
+    create_time_series_plot(r1_d, "Contact_Event_Date", "Drug_1_Value", "Drug_Name_1", "Drug_1_Units", "#ff9933"),
+    create_time_series_plot(r2_d, "Contact_Event_Date", "Drug_2_Value", "Drug_Name_2", "Drug_2_Units", "#ff9933")
   )
+
   n_panels <- length(Filter(Negate(is.null), plots))
+  if (n_panels == 0) return(300)
 
   per_panel_height <- 180
   base_margin_px   <- 100
@@ -994,126 +1131,80 @@ output$combined_plot_ui <- renderUI({
 # Rendering the combined plot based on selected visualisation
   
 output$combined_plot <- renderPlotly({
-  filtered_data <- Pt_Wide_reactive()
-  if (nrow(filtered_data) == 0) {
+  d <- Pt_Wide_reactive()
+  if (nrow(d) == 0) {
     showNotification("No data available for the selected patient.", type = "warning")
     return(NULL)
   }
 
-  n <- nrow(filtered_data)
+  sel_dx   <- if (is.null(input$dx_filter))   character(0) else input$dx_filter
+  sel_lab  <- if (is.null(input$lab_filter))  character(0) else input$lab_filter
+  sel_drug <- if (is.null(input$drug_filter)) character(0) else input$drug_filter
 
-  sel_dx   <- input$dx_filter
-  sel_lab  <- input$lab_filter
-  sel_drug <- input$drug_filter
+  # Filter per panel (NOT across categories). This is the key fix:
+  # unticking a diagnosis should only affect diagnosis panels; labs/drugs shouldn't "keep rows alive".
+  dx1_d <- if (length(sel_dx) > 0)   d %>% dplyr::filter(Diagnosis_1 %in% sel_dx) else d[0, , drop = FALSE]
+  dx2_d <- if (length(sel_dx) > 0)   d %>% dplyr::filter(Diagnosis_2 %in% sel_dx) else d[0, , drop = FALSE]
+  l1_d  <- if (length(sel_lab) > 0)  d %>% dplyr::filter(Biomedical_Test_1 %in% sel_lab) else d[0, , drop = FALSE]
+  l2_d  <- if (length(sel_lab) > 0)  d %>% dplyr::filter(Biomedical_Test_2 %in% sel_lab) else d[0, , drop = FALSE]
+  r1_d  <- if (length(sel_drug) > 0) d %>% dplyr::filter(Drug_Name_1 %in% sel_drug) else d[0, , drop = FALSE]
+  r2_d  <- if (length(sel_drug) > 0) d %>% dplyr::filter(Drug_Name_2 %in% sel_drug) else d[0, , drop = FALSE]
 
-  dx_keep   <- if (is.null(sel_dx)   || length(sel_dx)   == 0) rep(FALSE, n) else
-                 (filtered_data$Diagnosis_1 %in% sel_dx | filtered_data$Diagnosis_2 %in% sel_dx)
-
-  lab_keep  <- if (is.null(sel_lab)  || length(sel_lab)  == 0) rep(FALSE, n) else
-                 (filtered_data$Biomedical_Test_1 %in% sel_lab | filtered_data$Biomedical_Test_2 %in% sel_lab)
-
-  drug_keep <- if (is.null(sel_drug) || length(sel_drug) == 0) rep(FALSE, n) else
-                 (filtered_data$Drug_Name_1 %in% sel_drug | filtered_data$Drug_Name_2 %in% sel_drug)
-
-  any_selected <- (!is.null(sel_dx)   && length(sel_dx)   > 0) ||
-                  (!is.null(sel_lab)  && length(sel_lab)  > 0) ||
-                  (!is.null(sel_drug) && length(sel_drug) > 0)
-
-  row_keep <- if (!any_selected) rep(TRUE, n) else (dx_keep | lab_keep | drug_keep)
-
-  filtered_data <- filtered_data[row_keep, , drop = FALSE]
-  if (nrow(filtered_data) == 0) {
-    showNotification("No data after applying filters.", type = "warning")
-    return(NULL)
-  }
-
-  create_dynamic_label <- function(data, test_col = NULL, unit_col = NULL, drug_col = NULL, drug_unit_col = NULL, is_test = TRUE) {
-    if (is_test) {
-      first_non_na_test <- data[[test_col]][!is.na(data[[test_col]])][1]
-      first_non_na_unit <- if (!is.null(unit_col) && unit_col != "" && unit_col %in% names(data)) data[[unit_col]][!is.na(data[[unit_col]])][1] else NA
-      if (!is.na(first_non_na_test)) {
-        if (!is.null(first_non_na_unit) && !is.na(first_non_na_unit)) return(paste(first_non_na_test, "<br>", first_non_na_unit))
-        return(first_non_na_test)
-      }
-    } else {
-      first_non_na_drug <- data[[drug_col]][!is.na(data[[drug_col]])][1]
-      first_non_na_drug_unit <- data[[drug_unit_col]][!is.na(data[[drug_unit_col]])][1]
-      if (!is.na(first_non_na_drug)) {
-        if (!is.null(first_non_na_drug_unit) && !is.na(first_non_na_drug_unit)) return(paste(first_non_na_drug, "<br>", first_non_na_drug_unit))
-        return(first_non_na_drug)
-      }
-    }
-    return("Unknown Value")
-  }
-
-# Creating the time series plots
-  
   plot_list <- list(
-    create_diagnosis_plot(filtered_data, "Contact_Event_Date", "Diagnosis_1", "#fa5c5c"),
-    create_diagnosis_plot(filtered_data, "Contact_Event_Date", "Diagnosis_2", "#36a358"),
-    create_time_series_plot(filtered_data, "Contact_Event_Date", "Biomedical_Value_1", "Biomedical_Test_1", "Biomedical_1_Units", "#407EC9"),
-    create_time_series_plot(filtered_data, "Contact_Event_Date", "Biomedical_Value_2", "Biomedical_Test_2", "Biomedical_2_Units", "#407EC9"),
-    create_time_series_plot(filtered_data, "Contact_Event_Date", "Drug_1_Value", "Drug_Name_1", "Drug_1_Units", "#ff9933"),
-    create_time_series_plot(filtered_data, "Contact_Event_Date", "Drug_2_Value", "Drug_Name_2", "Drug_2_Units", "#ff9933")
+    create_diagnosis_plot(dx1_d, "Contact_Event_Date", "Diagnosis_1", "#fa5c5c"),
+    create_diagnosis_plot(dx2_d, "Contact_Event_Date", "Diagnosis_2", "#36a358"),
+    create_time_series_plot(l1_d, "Contact_Event_Date", "Biomedical_Value_1", "Biomedical_Test_1", "Biomedical_1_Units", "#407EC9"),
+    create_time_series_plot(l2_d, "Contact_Event_Date", "Biomedical_Value_2", "Biomedical_Test_2", "Biomedical_2_Units", "#407EC9"),
+    create_time_series_plot(r1_d, "Contact_Event_Date", "Drug_1_Value", "Drug_Name_1", "Drug_1_Units", "#ff9933"),
+    create_time_series_plot(r2_d, "Contact_Event_Date", "Drug_2_Value", "Drug_Name_2", "Drug_2_Units", "#ff9933")
   )
 
-# Creating the time series labels
-  
   label_list <- list(
-    create_dynamic_label(filtered_data, test_col = "Diagnosis_1", unit_col = "", is_test = TRUE),
-    create_dynamic_label(filtered_data, test_col = "Diagnosis_2", unit_col = "", is_test = TRUE),
-    create_dynamic_label(filtered_data, test_col = "Biomedical_Test_1", unit_col = "Biomedical_1_Units", is_test = TRUE),
-    create_dynamic_label(filtered_data, test_col = "Biomedical_Test_2", unit_col = "Biomedical_2_Units", is_test = TRUE),
-    create_dynamic_label(filtered_data, drug_col = "Drug_Name_1", drug_unit_col = "Drug_1_Units", is_test = FALSE),
-    create_dynamic_label(filtered_data, drug_col = "Drug_Name_2", drug_unit_col = "Drug_2_Units", is_test = FALSE)
+    if (!is.null(plot_list[[1]])) create_dynamic_label(dx1_d, test_col = "Diagnosis_1", unit_col = "", is_test = TRUE) else NULL,
+    if (!is.null(plot_list[[2]])) create_dynamic_label(dx2_d, test_col = "Diagnosis_2", unit_col = "", is_test = TRUE) else NULL,
+    if (!is.null(plot_list[[3]])) create_dynamic_label(l1_d,  test_col = "Biomedical_Test_1", unit_col = "Biomedical_1_Units", is_test = TRUE) else NULL,
+    if (!is.null(plot_list[[4]])) create_dynamic_label(l2_d,  test_col = "Biomedical_Test_2", unit_col = "Biomedical_2_Units", is_test = TRUE) else NULL,
+    if (!is.null(plot_list[[5]])) create_dynamic_label(r1_d,  drug_col = "Drug_Name_1", drug_unit_col = "Drug_1_Units", is_test = FALSE) else NULL,
+    if (!is.null(plot_list[[6]])) create_dynamic_label(r2_d,  drug_col = "Drug_Name_2", drug_unit_col = "Drug_2_Units", is_test = FALSE) else NULL
   )
 
-# Filtering out any null plots
-  
-  valid_plots  <- Filter(Negate(is.null), plot_list)
-  valid_labels <- label_list[!sapply(plot_list, is.null)]
+  valid_idx    <- which(!sapply(plot_list, is.null))
+  valid_plots  <- plot_list[valid_idx]
+  valid_labels <- label_list[valid_idx]
 
   if (length(valid_plots) == 0) {
     showNotification("No valid plots for the current filters.", type = "warning")
     return(NULL)
   }
 
-# Creating the combined plot output
+  n_panels <- length(valid_plots)
 
-per_panel_height <- 180
-base_margin_px   <- 100 
+  combined_plot <- plotly::subplot(
+    valid_plots,
+    nrows  = n_panels,
+    shareX = TRUE,
+    titleX = TRUE
+  ) %>%
+    layout(
+      annotations = lapply(seq_along(valid_labels), function(i) {
+        list(
+          x = -0.10,
+          y = 1 - (i - 1) * (1 / n_panels) - 0.11,
+          text = valid_labels[[i]],
+          showarrow = FALSE,
+          xref = "paper",
+          yref = "paper",
+          xanchor = "center",
+          yanchor = "middle",
+          textangle = 0,
+          font = list(size = 14)
+        )
+      }),
+      height = combined_height()
+    )
 
-n_panels <- length(valid_plots)
-total_height <- max(200, n_panels * per_panel_height + base_margin_px)
-
-combined_plot <- plotly::subplot(
-  valid_plots,
-  nrows  = n_panels,
-  shareX = TRUE,
-  titleX = TRUE
-) %>%
-  layout(
-    annotations = lapply(seq_along(valid_labels), function(i) {
-      list(
-        x = -0.10,
-        y = 1 - (i - 1) * (1 / n_panels) - 0.11,
-        text = valid_labels[[i]],
-        showarrow = FALSE,
-        xref = "paper",
-        yref = "paper",
-        xanchor = "center",
-        yanchor = "middle",
-        textangle = 0,
-        font = list(size = 14)
-      )
-    }),
-    height = combined_height()
-  )
-
-
-  return(combined_plot)
+  combined_plot
 })
-
 
 # Creating the patient report output
   
