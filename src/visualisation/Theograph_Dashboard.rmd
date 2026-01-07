@@ -379,46 +379,51 @@ mark{
 fluidRow(
   column(
     width = 4,
-    h3("Patient information"),
-    hr(),
-    uiOutput("patient_report", container = div, class = "info-card")
-  ),
-  column(
-    width = 4,
     h3("Patient selection"),
+    p(tags$em("Please select your patient's name from the filter below."), style = "margin-top:-10px; margin-bottom:6px; color:#666; font-size:10pt;"),
     hr(),
     div(
       class = "info-card",
-      p("This section allows you to search for a patient using given name or surname."),
       selectInput("patient_names", "Select Patient name:", choices = patient_names)
     )
   ),
   column(
     width = 4,
-    h3("Clinical free text"),
+    h3("Patient information"),
+    p(tags$em("General patient information."), style = "margin-top:-10px; margin-bottom:6px; color:#666; font-size:10pt;"),
+    hr(),
+    uiOutput("patient_report", container = div, class = "info-card")
+  ),
+  column(
+    width = 4,
+    h3("Clinical notes"),
+    p(tags$em("Most recently available note: see 'Clinical Notes' tab for further information."), style = "margin-top:-10px; margin-bottom:6px; color:#666; font-size:10pt;"),
     hr(),
     div(class = "info-card notes-preview", uiOutput("clinical_free_text"))
   )
 ),
 
-# ROW 2
+# ROW 2 (filters)
 
 fluidRow(
   column(
     width = 4,
     h3("Diagnoses"),
+    p(tags$em("Date included is of initial diagnosis."), style = "margin-top:-10px; margin-bottom:6px; color:#666; font-size:10pt;"),
     hr(),
     uiOutput("dx_filter_ui", container = div, class = "info-card")
   ),
   column(
     width = 4,
-    h3("Biomedical tests / assays"),
+    h3("Biomedical tests"),
+    p(tags$em("Date included is of latest test."), style = "margin-top:-10px; margin-bottom:6px; color:#666; font-size:10pt;"),
     hr(),
     uiOutput("lab_filter_ui", container = div, class = "info-card")
   ),
   column(
     width = 4,
     h3("Prescriptions"),
+    p(tags$em("Date included is of initial prescription."), style = "margin-top:-10px; margin-bottom:6px; color:#666; font-size:10pt;"),
     hr(),
     uiOutput("drug_filter_ui", container = div, class = "info-card")
   )
@@ -429,7 +434,7 @@ fluidRow(
     fluidRow(
       column(
         width = 12,
-        h3("Primary Care Timeline Tool"),
+        h3("Primary care timeline tool"),
         hr(),
         p("The time series below visualises the patient's GP contact history, displaying diagnoses, prescriptions, and assay results."),
         div(class = "plot-outer", uiOutput("combined_plot_ui")),
@@ -457,60 +462,64 @@ fluidRow(
   )
 ),
 
-  # User Guidance 
+    # Clinical Notes
   tabPanel(
-    title = "User Guidance",
+    title = "Clinical Notes",
     fluidPage(
       br(),
-      h2("User guidance"),
+      h2("Clinical free text timeline"),
       hr(),
-      p("Space for any appropriate introductory text to be included by University of Liverpool / Data Into Action."),
-
+      fluidRow(
+        column(
+          width = 6,
+          textInput(
+            "notes_search",
+            label = "Search clinical notes",
+            placeholder = "e.g. dizziness, BP, metformin, HbA1c..."
+          )
+        ),
+        column(
+          width = 6,
+          checkboxInput("notes_show_all", "Show all notes (ignore search filter)", value = FALSE)
+        )
+      ),
       br(),
-      h2("Categories explored within this tool"),
-      hr(),
-      p("Following the selection of one of the (fictional) patient's names, the time series below visualises the patient's GP contact history, displaying the following information:"),
-      tags$ul(
-        tags$li("Date of contact;"),
-        tags$li("The initial date of any relevant diagnoses;"),
-        tags$li("Any prescriptions (or changes to existing prescriptions) made on date of contact; and"),
-        tags$li("The results of any relevant biomedical assays completed on date of contact.")
+      div(
+        class = "notes-timeline",
+        uiOutput("clinical_notes_timeline")
       )
     )
   )
 ,
-tabPanel(
-  title = "Clinical Notes",
-  fluidPage(
-    br(),
-    h2("Clinical free text timeline"),
-    hr(),
-    fluidRow(
-      column(
-        width = 6,
-        textInput(
-          "notes_search",
-          label = "Search clinical notes",
-          placeholder = "e.g. dizziness, BP, metformin, HbA1c..."
+  # User Guidance
+  tabPanel(
+      title = "User Guidance",
+      fluidPage(
+        br(),
+        h2("User guidance"),
+        hr(),
+        p("Space for any appropriate introductory text to be included by University of Liverpool / Data Into Action."),
+
+        br(),
+        h2("Categories explored within this tool"),
+        hr(),
+        p("Following the selection of one of the (fictional) patient's names, the time series below visualises the patient's GP contact history, displaying the following information:"),
+        tags$ul(
+          tags$li("Date of contact;"),
+          tags$li("The initial date of any relevant diagnoses;"),
+          tags$li("Any prescriptions (or changes to existing prescriptions) made on date of contact; and"),
+          tags$li("The results of any relevant biomedical assays completed on date of contact.")
         )
-      ),
-      column(
-        width = 6,
-        checkboxInput("notes_show_all", "Show all notes (ignore search filter)", value = FALSE)
       )
-    ),
-    br(),
-    div(
-      class = "notes-timeline",
-      uiOutput("clinical_notes_timeline")
     )
-  )
-)
 )
 
 
 # Server
 
+
+
+# Helper: build dynamic y-axis labels for plots (diagnoses/tests vs drugs)
 create_dynamic_label <- function(data, test_col = NULL, unit_col = NULL, drug_col = NULL, drug_unit_col = NULL, is_test = TRUE) {
     if (is_test) {
       first_non_na_test <- data[[test_col]][!is.na(data[[test_col]])][1]
@@ -716,7 +725,7 @@ server <- function(input, output, session) {
       h4("Diagnoses"),
       DT::dataTableOutput("tbl_dx"),
       br(),
-      h4("Biomedical tests / assays"),
+      h4("Biomedical tests"),
       DT::dataTableOutput("tbl_lab"),
       br(),
       h4("Prescriptions"),
@@ -803,8 +812,7 @@ make_fake_notes <- function(patient_name) {
   )
 }
 
-# Rendering timeline UI
-
+# Render timeline UI
 output$clinical_notes_timeline <- renderUI({
   d <- Pt_Wide_reactive()
   nm <- if (nrow(d)) trimws(d$Patient_Name[1]) else "Selected patient"
@@ -866,6 +874,8 @@ output$clinical_notes_timeline <- renderUI({
 })
   
 # Updating the available Visualisation list based on selected patient
+  
+# Populating the three multi-selects when a patient is chosen
 
 dx_choices <- reactive({
   d <- Pt_Wide_reactive()
@@ -938,7 +948,7 @@ output$lab_filter_ui <- renderUI({
 
   if (nrow(d) == 0) {
     return(div(
-      h4("Biomedical tests / assays"),
+      h4("Biomedical tests"),
       hr(),
       checkboxGroupInput("lab_filter", label = NULL, choices = character(0), selected = character(0))
     ))
@@ -970,7 +980,7 @@ output$lab_filter_ui <- renderUI({
   })
 
   div(
-    h4("Biomedical tests / assays"),
+    h4("Biomedical tests"),
     hr(),
     checkboxGroupInput(
       inputId      = "lab_filter",
@@ -1025,13 +1035,12 @@ output$drug_filter_ui <- renderUI({
   )
 })
 
-# Filtering functionality 
-
+# Reset filters when the patient changes (Shiny otherwise preserves previous selections,
+  # which can leave everything unchecked when the choice lists change).
   observeEvent(Pt_Wide_reactive(), {
     d <- Pt_Wide_reactive()
 
     # Diagnoses (first recorded date)
-    
     dx_choices <- d %>%
       dplyr::select(Contact_Event_Date, Diagnosis_1, Diagnosis_2) %>%
       tidyr::pivot_longer(cols = c(Diagnosis_1, Diagnosis_2), values_to = "Diagnosis") %>%
@@ -1050,8 +1059,7 @@ output$drug_filter_ui <- renderUI({
       selected = if (nrow(dx_choices) > 0) dx_choices$Diagnosis else character(0)
     )
 
-    # Biomedical tests / assays (latest recorded date)
-    
+    # Biomedical tests (latest recorded date)
     lab_choices <- d %>%
       dplyr::select(Contact_Event_Date, Biomedical_Test_1, Biomedical_Test_2) %>%
       tidyr::pivot_longer(cols = c(Biomedical_Test_1, Biomedical_Test_2), values_to = "Test") %>%
@@ -1071,7 +1079,6 @@ output$drug_filter_ui <- renderUI({
     )
 
     # Prescriptions (first recorded date)
-    
     rx_choices <- d %>%
       dplyr::select(Contact_Event_Date, Drug_Name_1, Drug_Name_2) %>%
       tidyr::pivot_longer(cols = c(Drug_Name_1, Drug_Name_2), values_to = "Drug") %>%
@@ -1139,6 +1146,9 @@ output$combined_plot <- renderPlotly({
   sel_dx   <- if (is.null(input$dx_filter))   character(0) else input$dx_filter
   sel_lab  <- if (is.null(input$lab_filter))  character(0) else input$lab_filter
   sel_drug <- if (is.null(input$drug_filter)) character(0) else input$drug_filter
+
+  # Filter per panel (NOT across categories). This is the key fix:
+  # unticking a diagnosis should only affect diagnosis panels; labs/drugs shouldn't "keep rows alive".
   dx1_d <- if (length(sel_dx) > 0)   d %>% dplyr::filter(Diagnosis_1 %in% sel_dx) else d[0, , drop = FALSE]
   dx2_d <- if (length(sel_dx) > 0)   d %>% dplyr::filter(Diagnosis_2 %in% sel_dx) else d[0, , drop = FALSE]
   l1_d  <- if (length(sel_lab) > 0)  d %>% dplyr::filter(Biomedical_Test_1 %in% sel_lab) else d[0, , drop = FALSE]
@@ -1207,8 +1217,7 @@ output$combined_plot <- renderPlotly({
 output$patient_report <- renderUI({
   req(Pt_Wide_reactive())
 
-  # Using the currently selected patient's record
-  
+  # Use the currently selected patient's record
   filtered_data <- Pt_Wide_reactive()
   req(nrow(filtered_data) > 0)
 
