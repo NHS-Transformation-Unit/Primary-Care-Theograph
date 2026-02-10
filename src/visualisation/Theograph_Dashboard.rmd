@@ -724,10 +724,10 @@ server <- function(input, output, session) {
         names_to = "Diagnosis_Field",
         values_to = "Diagnosis"
       ) %>%
-      dplyr::filter(!is.na(Diagnosis), Diagnosis != "") %>%
-      dplyr::mutate(Contact_Event_Date = as.Date(Contact_Event_Date)) %>%
-      dplyr::distinct(Contact_Event_Date, Diagnosis) %>%
-      dplyr::arrange(Contact_Event_Date)
+      filter(!is.na(Diagnosis), Diagnosis != "") %>%
+      mutate(Contact_Event_Date = as.Date(Contact_Event_Date)) %>%
+      distinct(Contact_Event_Date, Diagnosis) %>%
+      arrange(Contact_Event_Date)
 
     if (!is.null(input$dx_filter)) {
       if (length(input$dx_filter) == 0) {
