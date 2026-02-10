@@ -9,17 +9,14 @@ runtime: shiny
 ---
 
 <style>
-/* Cerulean Theme CSS */
 
-/* Global Styles */
 body {
-    background-color: #fff; /* White background */
-    color: #333; /* Dark text color */
+    background-color: #fff;
+    color: #333;
     font-family: Franklin Gothic;
     font-size: 11pt;
     font-weight: 300;
 }
-
 
 h1, h2, h3, h4 {
   color: #407EC9;
@@ -30,52 +27,44 @@ hr {
   border-color: #407EC9;
 }
 
-/* Navbar Styles */
 .navbar {
-    background-color: #407EC9; /* Cerulean blue background */
-    border-color: #407EC9; /* Cerulean blue border */
-    color: #fff; /* White text color */
+    background-color: #407EC9; 
+    border-color: #407EC9; 
+    color: #fff; 
 }
 
-/* Button Styles */
 .btn-primary {
-    background-color: #407EC9; /* Cerulean blue button background */
-    border-color: #407EC9; /* Cerulean blue button border */
-    color: #fff; /* White text color */
+    background-color: #407EC9; 
+    border-color: #407EC9;
+    color: #fff; 
 }
 
-/* Custom button style for pale blue */
 .btn-download {
-    background-color: #B2D6E0; /* Pale blue background */
-    border-color: #B2D6E0; /* Pale blue border */
-    color: #fff; /* White text color */
+    background-color: #B2D6E0; 
+    border-color: #B2D6E0; 
+    color: #fff; 
 }
 
-/* Links Styles */
 a {
-    color: #407EC9; /* Cerulean blue link color */
+    color: #407EC9; 
 }
-
-/* Add more styles as needed */
 
 .toc.float-toc {
-    margin-bottom: 20px; /* Adjust the margin as needed */
+    margin-bottom: 20px; 
 }
 
 .plot-container {
-    max-width: 900px; /* Control the maximum width of the plot */
-    margin-left: auto; /* Align to the right */
-    margin-right: 0;
+    width: 100% !important;
+    max-width: 1700px !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
   }
   
-  /* Stop nested scrollbars inside Plotly widgets */
 .js-plotly-plot .plotly,
 .js-plotly-plot .plot-container,
 .js-plotly-plot .svg-container {
   overflow: visible !important;
 }
-
-  /* Adapting filter message formatting */
   
   .shiny-input-container p em { color: #666; 
 }
@@ -83,28 +72,96 @@ a {
 .plot-outer { overflow: visible !important; 
 }
 
-/* Let the page and tab panes expand naturally */
 html, body, .container-fluid, .tab-content, .tab-pane {
   height: auto !important;
   min-height: 100vh;
   overflow: visible !important;
 }
 
-/* The outer wrapper around the plot should never scroll */
 .plot-outer {
   overflow: visible !important;
 }
 
 .info-card{
   background:#f7f9fc;
-  border:1px solid #e3e8f0;
+  border:2px solid #407EC9;
   padding:12px 14px;
-  border-radius:8px;
+  border-radius:10px;
 }
-.info-card h4{ margin-top:0; }
-.info-multiline{ white-space:pre-wrap; }  /* lets you write multi-line notes without <br> */
 
-  
+.info-card h4{ margin-top:0; 
+}
+
+.info-multiline{ white-space:pre-wrap; 
+}
+
+.notes-timeline{
+  background:#ffffff;
+  border:1px solid #e3e8f0;
+  border-radius:10px;
+  padding:12px 14px;
+  max-height:70vh;
+  overflow-y:auto;
+  padding-right:8px;
+}
+
+.month-header{
+  position:sticky;
+  top:0;
+  z-index:5;
+  background:#ffffff;
+  padding:8px 0 6px 0;
+  border-bottom:1px solid #e3e8f0;
+  margin-bottom:10px;
+  font-weight:700;
+  color:#407EC9;
+}
+
+.note-card{
+  background:#ffffff;
+  border:1px solid #e3e8f0;
+  border-radius:10px;
+  padding:12px 14px;
+  margin-bottom:12px;
+}
+
+.note-card.pinned{
+  background:#f7f9fc;
+  border:2px solid #407EC9;
+  border-radius:10px;
+}
+
+.notes-preview{
+  background: #ffffff;
+  border: 1px solid #e3e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.notes-preview .note-card{
+  border-bottom: none;
+  margin: 0;
+}
+
+.note-meta{
+  font-weight:700;
+  color:#407EC9;
+  font-size:10.5pt;
+  margin-bottom:8px;
+}
+
+.note-body{
+  white-space:pre-wrap;
+  color:#333333;
+}
+mark{
+  background:#fff3b0;
+  padding:0 2px;
+}
+
+.notes-preview .month-header{
+  display: none;
+}
+
 </style>
 
 ```{css, echo=FALSE}
@@ -133,14 +190,7 @@ patient_names <- unique(Pt_Proc_Wide$Patient_Name)
 
 ```
 
-```{r logo, echo = FALSE}
 
-htmltools::img(src = knitr::image_uri(paste0(here(), "/images/DIA_logo_large.png")), 
-               alt = 'logo', 
-               style = 'position:absolute; top:0; right:5%; padding:10px;',
-               width = "180px",
-               heigth = "180px")
-```
 
 ```{r examplePlot, fig.height=18, echo=FALSE}
 
@@ -148,11 +198,33 @@ htmltools::img(src = knitr::image_uri(paste0(here(), "/images/DIA_logo_large.png
 
 create_time_series_plot <- function(data, date_col, y_col, test_col, unit_col, vis_colour) {
   tryCatch({
+
+    get_reference_line <- function(test_name) {
+      tn <- as.character(test_name)
+      if (is.na(tn) || tn == "") return(NULL)
+
+      if (tn == "Serum LDL (non-HDL)") {
+        return(list(y = 3.0, label = "Upper limit: 3.00 mmol/L"))
+      }
+      if (tn == "Systolic BP") {
+        return(list(y = 140, label = "Upper limit: 140 mmHg"))
+      }
+      if (tn == "Diastolic BP") {
+        return(list(y = 90, label = "Upper limit: 90 mmHg"))
+      }
+      if (tn == "HbA1c") {
+        return(list(y = 48, label = "Treatment target: 48 mmol/mol"))
+      }
+
+      NULL
+    }
+
     if (!(date_col %in% names(data)) | !(y_col %in% names(data)) | !(test_col %in% names(data)) | !(unit_col %in% names(data))) {
       stop("One or more specified columns are not found in the data frame.")
     }
 
     data <- data[!is.na(data[[y_col]]), ]
+    if (nrow(data) == 0) return(NULL)
 
     data$tooltip_text <- paste0(
       "Date: ", format(data[[date_col]], "%d/%m/%Y"), "<br>",
@@ -161,24 +233,58 @@ create_time_series_plot <- function(data, date_col, y_col, test_col, unit_col, v
 
     y_label <- paste(test_col, "<br>(", data[[unit_col]][1], ")", sep = "")
 
+    assay_name <- as.character(stats::na.omit(unique(data[[test_col]]))[1])
+    ref <- get_reference_line(assay_name)
+
+    # midpoint date for centered annotation
+    
+    x_mid <- as.Date(mean(as.numeric(range(data[[date_col]], na.rm = TRUE))), origin = "1970-01-01")
+
+    y_range_vals <- range(data[[y_col]], na.rm = TRUE)
+    y_rng <- diff(y_range_vals)
+    y_offset <- if (is.finite(y_rng) && y_rng > 0) max(y_rng * 0.07, 0.25) else 0.25
+
     plot <- ggplot(data, aes(x = !!sym(date_col), y = !!sym(y_col))) +
       geom_line(color = vis_colour) +
-      geom_point(aes(text = tooltip_text), color = vis_colour, size = 2) +  
+      geom_point(aes(text = tooltip_text), color = vis_colour, size = 2) +
       labs(title = NULL, x = "Date", y = y_label) +
-      scale_x_date(date_labels = "%d/%m/%Y", limits = c(as.Date("2020-01-01"), as.Date(Sys.Date()))) +
+      scale_x_date(
+        date_labels = "%d/%m/%Y",
+        limits = c(as.Date("2020-01-01"), as.Date(Sys.Date()))
+      ) +
       theme_minimal() +
       theme(axis.title.y = element_text(size = 12))
 
-    plotly_plot <- ggplotly(plot, tooltip = "text") %>% 
+    if (!is.null(ref)) {
+
+      y_label_pos <- ref$y - y_offset
+
+      y_min_safe <- y_range_vals[1] + if (is.finite(y_rng) && y_rng > 0) (y_rng * 0.02) else 0
+      if (is.finite(y_label_pos) && is.finite(y_min_safe)) {
+        y_label_pos <- max(y_label_pos, y_min_safe)
+      }
+
+      plot <- plot +
+        geom_hline(yintercept = ref$y, linetype = "dashed", color = vis_colour, alpha = 0.6) +
+        annotate(
+          "text",
+          x = x_mid,
+          y = y_label_pos,
+          label = ref$label,
+          size = 3.5,
+          color = vis_colour
+        )
+    }
+
+    ggplotly(plot, tooltip = "text") %>%
       layout(margin = list(l = 250))
 
-    return(plotly_plot)
   }, error = function(e) {
     return(NULL)
   })
 }
 
-# Function to create time series plots for diagnoses time series
+# function to create time series plots for diagnoses time series
 
 create_diagnosis_plot <- function(data, date_col, diagnosis_col, vis_colour) {
   tryCatch({
@@ -187,6 +293,8 @@ create_diagnosis_plot <- function(data, date_col, diagnosis_col, vis_colour) {
     }
 
     data <- data[!is.na(data[[diagnosis_col]]), ]
+
+    if (nrow(data) == 0) return(NULL)
 
     data$tooltip_text <- paste0(
       "Date: ", format(data[[date_col]], "%d/%m/%Y"), "<br>",
@@ -238,60 +346,171 @@ ui <- navbarPage(
       .btn-primary, .btn-download { background-color: #407EC9; border-color: #407EC9; color: #fff; }
       a { color: #407EC9; }
       .toc.float-toc { margin-bottom: 20px; }
-      .plot-container { max-width: 1400px; margin-left: auto; margin-right: 0; }
+      .plot-container { width: 100% !important; max-width: 1700px !important; margin-left: auto !important; margin-right: auto !important; }
       .shiny-input-container p em { color: #666; }
-    "))
-  ),
+
+      .info-card{
+        background:#f7f9fc;
+        border:2px solid #407EC9;
+        padding:12px 14px;
+        border-radius:10px;
+      }
+
+      .notes-preview{
+        padding:0 !important;
+        overflow:hidden;
+      }
+
+      
+      .notes-timeline{
+  background: #ffffff;
+  border: 1px solid #e3e8f0;
+  border-radius: 10px;
+  padding: 0;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.month-header{
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: #ffffff;
+  padding: 10px 14px;
+  margin: 0;
+  font-weight: 700;
+  color: #407EC9;
+  border-bottom: 2px solid #407EC9;
+}
+
+.note-card{
+  padding: 12px 14px;
+  margin: 0;
+  border-bottom: 1px solid #e3e8f0;  
+}
+
+.note-card:last-child{
+  border-bottom: none;
+}
+
+.note-meta{
+  font-weight: 700;
+  color: #407EC9;           
+  font-size: 11pt;
+  margin: 0 0 6px 0;
+}
+
+.note-body{
+  white-space: pre-wrap;
+  color: #333333;
+  line-height: 1.35;
+  margin: 0;
+}
+
+mark{
+  background: #fff3b0;
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+.note-card.pinned{
+  background: #f7f9fc;
+  border: 2px solid #407EC9;
+  border-radius: 10px;
+}
+
+.notes-preview .note-card,
+.notes-preview .note-card.pinned{
+  border: none !important;
+  box-shadow: none !important;
+}"))),
 
   tabPanel(
   title = "Timeline Tool",
   fluidPage(
 
-    hr(),
+# row 1 (patient info)
 
-    # ROW 1
+fluidRow(
+  column(
+    width = 4,
+    h3("Patient selection"),
+    p(tags$em("Please select your patient's name from the filter below."), style = "margin-top:-10px; margin-bottom:6px; color:#666; font-size:10pt;"),
+    hr(),
+    div(
+      class = "info-card",
+      selectInput("patient_names", "Select Patient name:", choices = patient_names),
+      uiOutput("preset_filter_ui")
+    )
+  ),
+  column(
+    width = 4,
+    h3("Patient information"),
+    p(tags$em("General patient information."), style = "margin-top:-10px; margin-bottom:6px; color:#666; font-size:10pt;"),
+    hr(),
+    uiOutput("patient_report", container = div, class = "info-card")
+  ),
+  column(
+    width = 4,
+    h3("Clinical notes"),
+    p(tags$em("Most recently available note: see 'Clinical Notes' tab for further information."), style = "margin-top:-10px; margin-bottom:6px; color:#666; font-size:10pt;"),
+    hr(),
+    div(class = "info-card notes-preview", uiOutput("clinical_free_text"))
+  )
+),
+
+# row 2 (filters)
+
+fluidRow(
+  column(
+    width = 4,
+    h3("Diagnoses"),
+    p(tags$em("Date included is of initial diagnosis."), style = "margin-top:-10px; margin-bottom:6px; color:#666; font-size:10pt;"),
+    hr(),
+    uiOutput("dx_filter_ui", container = div, class = "info-card")
+  ),
+  column(
+    width = 4,
+    h3("Biomedical tests"),
+    p(tags$em("Date included is of latest test."), style = "margin-top:-10px; margin-bottom:6px; color:#666; font-size:10pt;"),
+    hr(),
+    uiOutput("lab_filter_ui", container = div, class = "info-card")
+  ),
+  column(
+    width = 4,
+    h3("Prescriptions"),
+    p(tags$em("Date included is of initial prescription."), style = "margin-top:-10px; margin-bottom:6px; color:#666; font-size:10pt;"),
+    hr(),
+    uiOutput("drug_filter_ui", container = div, class = "info-card")
+  )
+),
+
+# row 3 (visalisations)
+
     fluidRow(
       column(
-        width = 3,
-        h3("Patient information"),
+        width = 12,
+        h3("Primary care timeline tool"),
         hr(),
-        uiOutput("patient_report", container = div, class = "info-card")
-      ),
-      column(
-        width = 3,
-        h3("Clinical free text"),
-        hr(),
-        uiOutput("clinical_free_text", container = div, class = "info-card")
-      ),
-
-      column(
-        width = 3,
-        h3("Visualisation filters"),
-        hr(),
-        p("Pick any mix of diagnoses, biomedical tests, and drugs to show."),
-        uiOutput("dx_filter_ui"),
-        uiOutput("lab_filter_ui"),
-        uiOutput("drug_filter_ui")
-      ),
-        column(
-        width = 3,
-        h3("Patient selection"),
-        hr(),
-        p("This section allows you to search for a patient using given name or surname."),
-        selectInput("patient_names", "Select Patient name:", choices = patient_names)
+        p("The time series below visualises the patient's GP contact history, displaying diagnoses, prescriptions, and assay results."),
+        actionButton(
+          "toggle_visualisations",
+          "Hide visualisations",
+          class = "btn btn-default btn-sm"
+        ),
+        br(),
+        div(class = "plot-outer", uiOutput("visualisations_ui")),
+        br(),
+        actionButton(
+          "toggle_summary_tables",
+          "Show / hide summary tables",
+          class = "btn btn-default btn-sm"
+        ),
+        br(), br(),
+        uiOutput("summary_tables_ui")
       )
     ),
 
-    # ROW 2 
-    fluidRow(
-      width = 12,
-      h3("Primary Care Timeline Tool"),
-      hr(),
-      p("The time series below visualises the patient's GP contact history, displaying diagnoses, prescriptions, and assay results."),
-      div(class = "plot-outer", uiOutput("combined_plot_ui"))
-    ),
-
-    # ROW 3 
     fluidRow(
       column(
         width = 3,
@@ -305,63 +524,586 @@ ui <- navbarPage(
   )
 ),
 
-  # User Guidance 
+# clinical notes
+
   tabPanel(
-    title = "User Guidance",
+    title = "Clinical Notes",
     fluidPage(
       br(),
-      h2("User guidance"),
+      h2("Clinical free text timeline"),
       hr(),
-      p("Space for any appropriate introductory text to be included by University of Liverpool / Data Into Action."),
 
-      br(),
-      h2("Categories explored within this tool"),
-      hr(),
-      p("Following the selection of one of the (fictional) patient's names, the time series below visualises the patient's GP contact history, displaying the following information:"),
-      tags$ul(
-        tags$li("Date of contact;"),
-        tags$li("The initial date of any relevant diagnoses;"),
-        tags$li("Any prescriptions (or changes to existing prescriptions) made on date of contact; and"),
-        tags$li("The results of any relevant biomedical assays completed on date of contact.")
+div(
+  class = "info-card",
+  fluidRow(
+    column(
+      width = 4,
+      textInput(
+        "notes_search",
+        label = "Search clinical notes",
+        placeholder = "e.g. dizziness, BP, metformin, HbA1c..."
+      )
+    ),
+    column(
+      width = 3,
+      uiOutput("notes_year_ui")
+    ),
+    column(
+      width = 3,
+      uiOutput("notes_month_ui")
+    ),
+    column(
+      width = 2,
+      checkboxInput(
+        "notes_show_all",
+        "Show all notes (ignore search filter)",
+        value = FALSE
       )
     )
   )
+),
+br(),
+      div(
+        class = "notes-timeline",
+        uiOutput("clinical_notes_timeline")
+      )
+    )
+  )
+,
+
+# user guidance
+
+  tabPanel(
+      title = "User Guidance",
+      fluidPage(
+        br(),
+        h2("User guidance"),
+        hr(),
+        p("Space for any appropriate introductory text to be included by University of Liverpool / Data Into Action."),
+
+        br(),
+        h2("Categories explored within this tool"),
+        hr(),
+        p("Following the selection of one of the (fictional) patient's names, the time series below visualises the patient's GP contact history, displaying the following information:"),
+        tags$ul(
+          tags$li("Date of contact;"),
+          tags$li("The initial date of any relevant diagnoses;"),
+          tags$li("Any prescriptions (or changes to existing prescriptions) made on date of contact; and"),
+          tags$li("The results of any relevant biomedical assays completed on date of contact.")
+        )
+      )
+    )
 )
 
 
-# Server
+# server
+
+# helper function to build dynamic y-axis labels for plots
+
+create_dynamic_label <- function(data, test_col = NULL, unit_col = NULL, drug_col = NULL, drug_unit_col = NULL, is_test = TRUE) {
+    if (is_test) {
+      first_non_na_test <- data[[test_col]][!is.na(data[[test_col]])][1]
+      first_non_na_unit <- if (!is.null(unit_col) && unit_col != "" && unit_col %in% names(data)) data[[unit_col]][!is.na(data[[unit_col]])][1] else NA
+      if (!is.na(first_non_na_test)) {
+        if (!is.null(first_non_na_unit) && !is.na(first_non_na_unit)) return(paste(first_non_na_test, "<br>", first_non_na_unit))
+        return(first_non_na_test)
+      }
+    } else {
+      first_non_na_drug <- data[[drug_col]][!is.na(data[[drug_col]])][1]
+      first_non_na_drug_unit <- data[[drug_unit_col]][!is.na(data[[drug_unit_col]])][1]
+      if (!is.na(first_non_na_drug)) {
+        if (!is.null(first_non_na_drug_unit) && !is.na(first_non_na_drug_unit)) return(paste(first_non_na_drug, "<br>", first_non_na_drug_unit))
+        return(first_non_na_drug)
+      }
+    }
+    return("Unknown Value")
+  }
 
 server <- function(input, output, session) {
 
-# Reactive expression to filter data by selected patient
+  checkboxGroupHTML <- function(inputId, label, choiceValues, choiceLabels, selected = choiceValues) {
+    tags$div(
+      class = "form-group shiny-input-container",
+      tags$label(class = "control-label", `for` = inputId, label),
+      tags$div(
+        id = inputId,
+        class = "shiny-input-checkboxgroup shiny-bound-input",
+        lapply(seq_along(choiceValues), function(i) {
+          val <- choiceValues[[i]]
+          lab <- choiceLabels[[i]]
+          tags$div(
+            class = "checkbox",
+            tags$label(
+              tags$input(
+                type = "checkbox",
+                name = inputId,
+                value = val,
+                checked = if (val %in% selected) "checked" else NULL
+              ),
+              tags$span(lab)
+            )
+          )
+        })
+      )
+    )
+  }
+
+
+# preset filter helpers
+  
+  `%||%` <- function(a, b) if (!is.null(a)) a else b
+
+  preset_targets <- function(preset_id) {
+    preset_id <- as.character(preset_id %||% "none")
+
+    if (preset_id == "t2dm") {
+      return(list(
+        dx   = c("Type 2 diabetes"),
+        lab  = c("HbA1c"),
+        drug = c("Metformin")
+      ))
+    }
+    if (preset_id == "htn") {
+      return(list(
+        dx   = c("Hypertension"),
+        lab  = c("Systolic BP", "Diastolic BP"),
+        drug = c("Amlodipine")
+      ))
+    }
+    if (preset_id == "lipids") {
+      return(list(
+        dx   = c("Lipid disorder"),
+        lab  = c("Serum LDL (non-HDL)"),
+        drug = c("Atorvastatin")
+      ))
+    }
+    if (preset_id == "depr") {
+      return(list(
+        dx   = c("Depression"),
+        lab  = character(0),
+        drug = c("Sertraline")
+      ))
+    }
+
+# defaulting to select everything available
+    
+    list(dx = NULL, lab = NULL, drug = NULL)
+  }
+
+  get_selected_for_patient <- function(all_choices, target_vec) {
+    
+    if (is.null(target_vec)) return(all_choices)
+
+    out <- intersect(all_choices, target_vec)
+
+    if (length(out) == 0) return(character(0))
+
+    out
+  }
+
+# reactive expression to filter data by selected patient
   
   Pt_Wide_reactive <- reactive({
     req(input$patient_names)
     Pt_Proc_Wide %>%
       filter(Patient_Name == input$patient_names) %>%
-      mutate(Contact_Event_Date = as.Date(Contact_Event_Date, format = "%Y-%m-%d")) 
-  })
+      mutate(Contact_Event_Date = suppressWarnings(as.Date(gsub("/", "-", as.character(Contact_Event_Date)), format = "%Y-%m-%d")))
+})
   
+
+# summary tables
+  
+  dx_table_data <- reactive({
+    d <- Pt_Wide_reactive()
+    if (is.null(d) || nrow(d) == 0) return(data.frame())
+
+    dx <- d %>%
+      dplyr::select(Contact_Event_Date, dplyr::starts_with("Diagnosis_")) %>%
+      tidyr::pivot_longer(
+        cols = dplyr::starts_with("Diagnosis_"),
+        names_to = "Diagnosis_Field",
+        values_to = "Diagnosis"
+      ) %>%
+      dplyr::filter(!is.na(Diagnosis), Diagnosis != "") %>%
+      dplyr::mutate(Contact_Event_Date = as.Date(Contact_Event_Date)) %>%
+      dplyr::distinct(Contact_Event_Date, Diagnosis) %>%
+      dplyr::arrange(Contact_Event_Date)
+
+    if (!is.null(input$dx_filter)) {
+      if (length(input$dx_filter) == 0) {
+        dx <- dx[0, , drop = FALSE]
+      } else {
+        dx <- dx %>% dplyr::filter(Diagnosis %in% input$dx_filter)
+      }
+    }
+
+    dx
+  })
+
+  rx_table_data <- reactive({
+    req(input$patient_names)
+
+    d <- Pt_Proc_Wide %>%
+      filter(Patient_Name == input$patient_names)
+
+    rx1 <- d %>%
+      transmute(
+        Contact_Event_Date = as.Date(Contact_Event_Date),
+        Drug = Drug_Name_1,
+        Dose = Drug_1_Value,
+        Units = Drug_1_Units
+      )
+
+    rx2 <- d %>%
+      transmute(
+        Contact_Event_Date = as.Date(Contact_Event_Date),
+        Drug = Drug_Name_2,
+        Dose = Drug_2_Value,
+        Units = Drug_2_Units
+      )
+
+    out <- bind_rows(rx1, rx2) %>%
+      filter(!is.na(Drug) & Drug != "") %>%
+      distinct() %>%
+      arrange(Contact_Event_Date)
+
+    if (!is.null(input$drug_filter)) {
+      if (length(input$drug_filter) == 0) {
+        out <- out[0, , drop = FALSE]
+      } else {
+        out <- out %>% filter(Drug %in% input$drug_filter)
+      }
+    }
+
+    out
+  })
+
+  lab_table_data <- reactive({
+    req(input$patient_names)
+
+    d <- Pt_Proc_Wide %>%
+      filter(Patient_Name == input$patient_names)
+
+    lab1 <- d %>%
+      transmute(
+        Contact_Event_Date = as.Date(Contact_Event_Date),
+        Test = Biomedical_Test_1,
+        Value = Biomedical_Value_1,
+        Units = Biomedical_1_Units
+      )
+
+    lab2 <- d %>%
+      transmute(
+        Contact_Event_Date = as.Date(Contact_Event_Date),
+        Test = Biomedical_Test_2,
+        Value = Biomedical_Value_2,
+        Units = Biomedical_2_Units
+      )
+
+    out <- bind_rows(lab1, lab2) %>%
+      filter(!is.na(Test) & Test != "") %>%
+      distinct() %>%
+      arrange(Contact_Event_Date)
+
+    if (!is.null(input$lab_filter)) {
+      if (length(input$lab_filter) == 0) {
+        out <- out[0, , drop = FALSE]
+      } else {
+        out <- out %>% filter(Test %in% input$lab_filter)
+      }
+    }
+
+    out
+  })
+
+  output$tbl_dx <- DT::renderDataTable({
+    DT::datatable(
+      dx_table_data(),
+      rownames = FALSE,
+      options = list(pageLength = 6, lengthChange = FALSE)
+    )
+  })
+
+  output$tbl_lab <- DT::renderDataTable({
+    DT::datatable(
+      lab_table_data(),
+      rownames = FALSE,
+      options = list(pageLength = 6, lengthChange = FALSE)
+    )
+  })
+
+  output$tbl_rx <- DT::renderDataTable({
+    DT::datatable(
+      rx_table_data(),
+      rownames = FALSE,
+      options = list(pageLength = 6, lengthChange = FALSE)
+    )
+  })
+
+
+# sisualisations toggle (shown by default)
+show_visualisations <- reactiveVal(TRUE)
+
+observeEvent(input$toggle_visualisations, {
+  show_visualisations(!show_visualisations())
+})
+
+output$visualisations_ui <- renderUI({
+  if (!show_visualisations()) return(NULL)
+  uiOutput("combined_plot_ui")
+})
+
+  show_summary_tables <- reactiveVal(FALSE)
+
+  observeEvent(input$toggle_summary_tables, {
+    show_summary_tables(!show_summary_tables())
+  })
+
+  output$summary_tables_ui <- renderUI({
+    if (!show_summary_tables()) return(NULL)
+
+    div(
+      class = "info-card",
+      h3("Summary tables"),
+      p("Tabular view of the data shown in the time series plots."),
+      hr(),
+      h4("Diagnoses"),
+      DT::dataTableOutput("tbl_dx"),
+      br(),
+      h4("Biomedical tests"),
+      DT::dataTableOutput("tbl_lab"),
+      br(),
+      h4("Prescriptions"),
+      DT::dataTableOutput("tbl_rx")
+    )
+  })
+
   output$clinical_free_text <- renderUI({
   d <- Pt_Wide_reactive()
-  nm <- if (nrow(d)) d$Patient_Name[1] else "Selected patient"
+  nm <- if (nrow(d)) trimws(d$Patient_Name[1]) else "Selected patient"
+
+  notes <- notes_data()
+  if (nrow(notes) == 0) {
+    return(tags$div(
+      class = "note-card pinned",
+      tags$div(class = "note-meta", "No notes available."),
+      tags$div(class = "note-body", "No clinical free-text entries were found for this patient.")
+    ))
+  }
+  meta_line <- paste0(
+    format(notes$note_date[1], "%d %b %Y"),
+    " • ",
+    notes$note_type[1],
+    " • ",
+    nm
+  )
+
   tags$div(
-    style = "white-space: pre-wrap; background:#f7f9fc; border:1px solid #e3e8f0; padding:10px; border-radius:8px;",
-    paste0(
-      "Consultation note (placeholder):\n",
-      "- Patient: ", nm, "\n",
-      "- Subjective: Reports variable energy levels and occasional dizziness on standing.\n",
-      "- Objective: Vitals within acceptable range for age; no acute distress.\n",
-      "- Assessment: Stable chronic disease profile; medication adherence discussed.\n",
-      "- Plan: Routine bloods at next contact; reinforce lifestyle advice; safety-netting provided."
+      class = "note-card pinned",
+      tags$div(class = "note-meta", meta_line),
+      tags$div(class = "note-body", notes$note_body[1])
     )
+  
+})
+
+# clinical notes tab
+
+highlight_term <- function(text, term) {
+  if (is.null(term) || !nzchar(trimws(term))) return(htmltools::htmlEscape(text))
+  term <- trimws(term)
+
+  safe <- htmltools::htmlEscape(text)
+
+  patt <- gsub("([\\^\\$\\.|\\?\\*\\+\\(\\)\\[\\]\\{\\}\\\\])", "\\\\\\1", term)
+
+  gsub(paste0("(?i)(", patt, ")"), "<mark>\\1</mark>", safe, perl = TRUE)
+}
+
+# placeholders
+
+make_fake_notes <- function(patient_name) {
+  seed_val <- sum(utf8ToInt(patient_name)) %% 10000
+  set.seed(seed_val)
+
+  n_notes <- 18
+  dates <- sort(sample(seq.Date(Sys.Date() - 365, Sys.Date(), by = "day"), n_notes), decreasing = TRUE)
+
+  types <- sample(
+    c("Telephone consultation", "Face-to-face review", "Results review", "Medication review"),
+    n_notes, replace = TRUE
+  )
+
+  templates <- c(
+    "Pt reports intermittent fatigue. No red flags.\nDiscussed hydration and sleep hygiene.\nSafety-netting given.",
+    "Vitals reviewed. No acute distress.\nMedication reconciliation completed.\nPlan: routine bloods and follow-up.",
+    "Discussed recent results.\nAgreed lifestyle measures.\nPlan: repeat labs in 3 months.",
+    "Adherence good. No adverse effects reported.\nPlan: continue current regimen and monitor."
+  )
+
+  bodies <- vapply(seq_len(n_notes), function(i) {
+    paste0(
+      templates[sample.int(length(templates), 1)],
+      "\n\nProblem list (fictional):\n- Hypertension\n- Type 2 diabetes mellitus\n- Hyperlipidaemia"
+    )
+  }, character(1))
+
+  data.frame(
+    note_date = dates,
+    note_type = types,
+    note_body = bodies,
+    stringsAsFactors = FALSE
+  )
+}
+
+
+# clinical notes data (and month/year filters)
+
+notes_data <- reactive({
+  d <- Pt_Wide_reactive()
+  nm <- if (nrow(d)) trimws(d$Patient_Name[1]) else "Selected patient"
+
+# base notes (synthetic) for the selected patient
+  
+  notes <- make_fake_notes(nm)
+  notes <- notes[order(notes$note_date, decreasing = TRUE), , drop = FALSE]
+
+  notes$year  <- format(notes$note_date, "%Y")
+  notes$month <- format(notes$note_date, "%B")
+  notes$month_num <- as.integer(format(notes$note_date, "%m"))
+
+  notes
+})
+
+output$notes_year_ui <- renderUI({
+  notes <- notes_data()
+
+  yrs <- sort(unique(notes$year), decreasing = TRUE)
+  choices <- c("All years" = "all")
+  choices <- c(choices, stats::setNames(yrs, yrs))
+
+  current <- input$notes_year
+  if (is.null(current) || !(current %in% unname(choices))) current <- "all"
+
+  selectInput(
+    inputId = "notes_year",
+    label   = "Filter by year:",
+    choices = choices,
+    selected = current
   )
 })
 
+output$notes_month_ui <- renderUI({
+  notes <- notes_data()
+
+  yr <- input$notes_year
+  if (!is.null(yr) && yr != "all") {
+    notes <- notes[notes$year == yr, , drop = FALSE]
+  }
+
+  if (nrow(notes) == 0) {
+    return(selectInput(
+      inputId = "notes_month",
+      label   = "Filter by month:",
+      choices = c("All months" = "all"),
+      selected = "all"
+    ))
+  }
+
+# ordering months chronologically based on month number
   
-# Updating the available Visualisation list based on selected patient
+  month_df <- unique(notes[, c("month", "month_num")])
+  month_df <- month_df[order(month_df$month_num), , drop = FALSE]
+  mos <- month_df$month
+
+  choices <- c("All months" = "all")
+  choices <- c(choices, stats::setNames(mos, mos))
+
+  current <- input$notes_month
+  if (is.null(current) || !(current %in% unname(choices))) current <- "all"
+
+  selectInput(
+    inputId = "notes_month",
+    label   = "Filter by month:",
+    choices = choices,
+    selected = current
+  )
+})
+
+
+# rendering timeline UI
+
+output$clinical_notes_timeline <- renderUI({
+  d <- Pt_Wide_reactive()
+  nm <- if (nrow(d)) trimws(d$Patient_Name[1]) else "Selected patient"
+
+  notes <- notes_data()
+  notes <- notes[order(notes$note_date, decreasing = TRUE), , drop = FALSE]
+  q <- input$notes_search
+  show_all <- isTRUE(input$notes_show_all)
+
+  if (!show_all && !is.null(q) && nzchar(trimws(q))) {
+    q2 <- tolower(trimws(q))
+    keep <- grepl(q2, tolower(notes$note_body)) | grepl(q2, tolower(notes$note_type))
+    notes <- notes[keep, , drop = FALSE]
+  }
+
+# applying month/year filters
   
-# Populating the three multi-selects when a patient is chosen
+  yr <- input$notes_year
+  mo <- input$notes_month
+
+  if (!is.null(yr) && yr != "all") {
+    notes <- notes[notes$year == yr, , drop = FALSE]
+  }
+  if (!is.null(mo) && mo != "all") {
+    notes <- notes[notes$month == mo, , drop = FALSE]
+  }
+
+  if (nrow(notes) == 0) {
+    return(tags$div(
+      class = "note-card",
+      tags$div(class = "note-meta", "No matching notes."),
+      tags$div(class = "note-body", "Try a different search term, adjust the month/year filters, or tick 'Show all notes'.")
+    ))
+  }
+
+  notes$month_key <- format(notes$note_date, "%B %Y")
+  month_levels <- unique(notes$month_key)
+
+  out <- list()
+
+  for (m in month_levels) {
+    out <- c(out, list(tags$div(class = "month-header", m)))
+
+    idx <- which(notes$month_key == m)
+
+    for (i in idx) {
+      is_latest <- (i == 1) 
+
+      meta_line <- paste0(
+        format(notes$note_date[i], "%d %b %Y"),
+        " • ",
+        notes$note_type[i],
+        " • ",
+        nm
+      )
+
+      body_html <- highlight_term(notes$note_body[i], q)
+
+      out <- c(out, list(
+        tags$div(
+          class = paste("note-card", if (is_latest) "pinned" else ""),
+          tags$div(class = "note-meta", meta_line),
+          tags$div(class = "note-body", HTML(body_html))
+        )
+      ))
+    }
+  }
+
+  do.call(tagList, out)
+})
+  
+# Updating the available visualisation list based on selected patient
 
 dx_choices <- reactive({
   d <- Pt_Wide_reactive()
@@ -381,74 +1123,302 @@ drug_choices <- reactive({
   ch[!is.na(ch) & ch != ""]
 })
 
-# Rendering the three filter UIs
+
+# preset dropdown UI (dynamic per selected patient)
+
+output$preset_filter_ui <- renderUI({
+  
+  dx <- dx_choices()
+
+  choices <- c("None (show all)" = "none")
+
+  if ("Type 2 diabetes" %in% dx) choices <- c(choices, "Type 2 diabetes" = "t2dm")
+  if ("Hypertension" %in% dx) choices <- c(choices, "Hypertension" = "htn")
+  if ("Lipid disorder" %in% dx) choices <- c(choices, "Lipid disorder" = "lipids")
+  if ("Depression" %in% dx) choices <- c(choices, "Depression" = "depr")
+
+  current <- input$preset_filter
+  if (is.null(current) || !(current %in% unname(choices))) current <- "none"
+
+  selectInput(
+    inputId = "preset_filter",
+    label   = "Select preset filter:",
+    choices = choices,
+    selected = current
+  )
+})
+
+# rendering the three filter UIs
 
 output$dx_filter_ui <- renderUI({
-  ch <- dx_choices()
-  if (length(ch) == 0) {
-    div(class = "form-group shiny-input-container",
-        tags$label("Diagnoses", `for` = "dx_filter", class = "control-label"),
-        tags$br(),
-        tags$em("No diagnoses available for patient.")
-    )
-  } else {
-    checkboxGroupInput("dx_filter", "Diagnoses", choices = ch, inline = FALSE)
+  d <- Pt_Wide_reactive()
+
+  if (nrow(d) == 0) {
+    return(div(
+      h4("Diagnoses"),
+      hr(),
+      checkboxGroupInput("dx_filter", label = NULL, choices = character(0), selected = character(0))
+    ))
   }
+
+  dx_long <- d %>%
+    dplyr::select(Contact_Event_Date, Diagnosis_1, Diagnosis_2) %>%
+    tidyr::pivot_longer(
+      cols = dplyr::starts_with("Diagnosis_"),
+      names_to = "src",
+      values_to = "Diagnosis"
+    ) %>%
+    dplyr::filter(!is.na(Diagnosis), Diagnosis != "") %>%
+    dplyr::mutate(Contact_Event_Date = suppressWarnings(as.Date(Contact_Event_Date))) %>%
+    dplyr::group_by(Diagnosis) %>%
+    dplyr::summarise(first_date = min(Contact_Event_Date, na.rm = TRUE), .groups = "drop") %>%
+    dplyr::arrange(Diagnosis)
+
+  ch <- dx_long$Diagnosis
+  dates <- dx_long$first_date
+
+  choice_names <- lapply(seq_along(ch), function(i) {
+    dt <- dates[[i]]
+    dt_txt <- if (!is.na(dt)) format(dt, "%d %b %Y") else ""
+    htmltools::HTML(paste0(htmltools::htmlEscape(ch[[i]]), "&nbsp;&nbsp;<em>", dt_txt, "</em>"))
+  })
+
+  preset <- preset_targets(input$preset_filter)
+  selected_dx <- get_selected_for_patient(ch, preset$dx)
+
+  div(
+    h4("Diagnoses"),
+    hr(),
+    checkboxGroupInput(
+      inputId      = "dx_filter",
+      label        = NULL,
+      choiceNames  = choice_names,
+      choiceValues = ch,
+      selected     = selected_dx
+    )
+  )
 })
 
 output$lab_filter_ui <- renderUI({
-  ch <- lab_choices()
-  if (length(ch) == 0) {
-    div(class = "form-group shiny-input-container",
-        tags$label("Biomedical tests / assays", `for` = "lab_filter", class = "control-label"),
-        tags$br(),
-        tags$em("No biomedical tests available for patient.")
-    )
-  } else {
-    checkboxGroupInput("lab_filter", "Biomedical tests / assays", choices = ch, inline = FALSE)
+  d <- Pt_Wide_reactive()
+
+  if (nrow(d) == 0) {
+    return(div(
+      h4("Biomedical tests"),
+      hr(),
+      checkboxGroupInput("lab_filter", label = NULL, choices = character(0), selected = character(0))
+    ))
   }
+
+  lab_long <- d %>%
+    dplyr::select(Contact_Event_Date, Biomedical_Test_1, Biomedical_Test_2) %>%
+    tidyr::pivot_longer(
+      cols = c(Biomedical_Test_1, Biomedical_Test_2),
+      names_to = "Test_Number",
+      values_to = "Test"
+    ) %>%
+    dplyr::filter(!is.na(Test), Test != "") %>%
+    dplyr::mutate(Contact_Event_Date = suppressWarnings(as.Date(Contact_Event_Date))) %>%
+    dplyr::group_by(Test) %>%
+    dplyr::summarise(
+      date_of_latest = if (all(is.na(Contact_Event_Date))) as.Date(NA) else max(Contact_Event_Date, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    dplyr::arrange(Test)
+
+  ch <- lab_long$Test
+  dates <- lab_long$date_of_latest
+
+  choice_names <- lapply(seq_along(ch), function(i) {
+    dt <- dates[[i]]
+    dt_txt <- if (!is.na(dt)) format(dt, "%d %b %Y") else ""
+    htmltools::HTML(paste0(htmltools::htmlEscape(ch[[i]]), "&nbsp;&nbsp;<em>", dt_txt, "</em>"))
+  })
+
+  preset <- preset_targets(input$preset_filter)
+  selected_lab <- get_selected_for_patient(ch, preset$lab)
+
+  div(
+    h4("Biomedical tests"),
+    hr(),
+    checkboxGroupInput(
+      inputId      = "lab_filter",
+      label        = NULL,
+      choiceNames  = choice_names,
+      choiceValues = ch,
+      selected     = selected_lab
+    )
+  )
 })
 
 output$drug_filter_ui <- renderUI({
-  ch <- drug_choices()
-  if (length(ch) == 0) {
-    div(class = "form-group shiny-input-container",
-        tags$label("Drugs", `for` = "drug_filter", class = "control-label"),
-        tags$br(),
-        tags$em("No prescriptions available for patient.")
-    )
-  } else {
-    checkboxGroupInput("drug_filter", "Drugs", choices = ch, inline = FALSE)
+  d <- Pt_Wide_reactive()
+
+  if (nrow(d) == 0) {
+    return(div(
+      h4("Drugs"),
+      hr(),
+      checkboxGroupInput("drug_filter", label = NULL, choices = character(0), selected = character(0))
+    ))
   }
+
+  rx_long <- dplyr::bind_rows(
+    tibble::tibble(Contact_Event_Date = d$Contact_Event_Date, Drug = d$Drug_Name_1),
+    tibble::tibble(Contact_Event_Date = d$Contact_Event_Date, Drug = d$Drug_Name_2)
+  ) %>%
+    dplyr::filter(!is.na(Drug), Drug != "") %>%
+    dplyr::mutate(Contact_Event_Date = suppressWarnings(as.Date(Contact_Event_Date))) %>%
+    dplyr::group_by(Drug) %>%
+    dplyr::summarise(first_date = min(Contact_Event_Date, na.rm = TRUE), .groups = "drop") %>%
+    dplyr::arrange(Drug)
+
+  ch <- rx_long$Drug
+  dates <- rx_long$first_date
+
+  choice_names <- lapply(seq_along(ch), function(i) {
+    dt <- dates[[i]]
+    dt_txt <- if (!is.na(dt)) format(dt, "%d %b %Y") else ""
+    htmltools::HTML(paste0(htmltools::htmlEscape(ch[[i]]), "&nbsp;&nbsp;<em>", dt_txt, "</em>"))
+  })
+
+  preset <- preset_targets(input$preset_filter)
+  selected_drug <- get_selected_for_patient(ch, preset$drug)
+
+  div(
+    h4("Drugs"),
+    hr(),
+    checkboxGroupInput(
+      inputId      = "drug_filter",
+      label        = NULL,
+      choiceNames  = choice_names,
+      choiceValues = ch,
+      selected     = selected_drug
+    )
+  )
 })
+
+# resetting filters when the patient changes
+
+  observeEvent(Pt_Wide_reactive(), {
+    d <- Pt_Wide_reactive()
+    preset <- preset_targets(input$preset_filter)
+
+# diagnoses (first recorded date)
+    
+    dx_choices_df <- d %>%
+      dplyr::select(Contact_Event_Date, Diagnosis_1, Diagnosis_2) %>%
+      tidyr::pivot_longer(cols = c(Diagnosis_1, Diagnosis_2), values_to = "Diagnosis") %>%
+      dplyr::filter(!is.na(Diagnosis), Diagnosis != "") %>%
+      dplyr::mutate(Contact_Event_Date = suppressWarnings(as.Date(Contact_Event_Date))) %>%
+      dplyr::group_by(Diagnosis) %>%
+      dplyr::summarise(
+        date_of_first = if (all(is.na(Contact_Event_Date))) as.Date(NA) else min(Contact_Event_Date, na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
+      dplyr::arrange(Diagnosis)
+
+    shiny::updateCheckboxGroupInput(
+      session,
+      "dx_filter",
+      selected = get_selected_for_patient(
+        if (nrow(dx_choices_df) > 0) dx_choices_df$Diagnosis else character(0),
+        preset$dx
+      )
+    )
+
+# biomedical tests (latest recorded date)
+    
+    lab_choices_df <- d %>%
+      dplyr::select(Contact_Event_Date, Biomedical_Test_1, Biomedical_Test_2) %>%
+      tidyr::pivot_longer(cols = c(Biomedical_Test_1, Biomedical_Test_2), values_to = "Test") %>%
+      dplyr::filter(!is.na(Test), Test != "") %>%
+      dplyr::mutate(Contact_Event_Date = suppressWarnings(as.Date(Contact_Event_Date))) %>%
+      dplyr::group_by(Test) %>%
+      dplyr::summarise(
+        date_of_latest = if (all(is.na(Contact_Event_Date))) as.Date(NA) else max(Contact_Event_Date, na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
+      dplyr::arrange(Test)
+
+    shiny::updateCheckboxGroupInput(
+      session,
+      "lab_filter",
+      selected = get_selected_for_patient(
+        if (nrow(lab_choices_df) > 0) lab_choices_df$Test else character(0),
+        preset$lab
+      )
+    )
+
+# prescriptions (first recorded date)
+    
+    rx_choices_df <- d %>%
+      dplyr::select(Contact_Event_Date, Drug_Name_1, Drug_Name_2) %>%
+      tidyr::pivot_longer(cols = c(Drug_Name_1, Drug_Name_2), values_to = "Drug") %>%
+      dplyr::filter(!is.na(Drug), Drug != "") %>%
+      dplyr::mutate(Contact_Event_Date = suppressWarnings(as.Date(Contact_Event_Date))) %>%
+      dplyr::group_by(Drug) %>%
+      dplyr::summarise(
+        date_of_first = if (all(is.na(Contact_Event_Date))) as.Date(NA) else min(Contact_Event_Date, na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
+      dplyr::arrange(Drug)
+
+    shiny::updateCheckboxGroupInput(
+      session,
+      "drug_filter",
+      selected = get_selected_for_patient(
+        if (nrow(rx_choices_df) > 0) rx_choices_df$Drug else character(0),
+        preset$drug
+      )
+    )
+  }, ignoreInit = FALSE)
+
+# applying preset selections immediately when the preset dropdown changes
+  
+  observeEvent(input$preset_filter, {
+    d <- Pt_Wide_reactive()
+    if (is.null(d) || nrow(d) == 0) return()
+
+    preset <- preset_targets(input$preset_filter)
+
+    dx_all <- dx_choices()
+    lab_all <- lab_choices()
+    drug_all <- drug_choices()
+
+    shiny::updateCheckboxGroupInput(session, "dx_filter",
+                                   selected = get_selected_for_patient(dx_all, preset$dx))
+    shiny::updateCheckboxGroupInput(session, "lab_filter",
+                                   selected = get_selected_for_patient(lab_all, preset$lab))
+    shiny::updateCheckboxGroupInput(session, "drug_filter",
+                                   selected = get_selected_for_patient(drug_all, preset$drug))
+  }, ignoreInit = TRUE)
 
 combined_height <- reactive({
   d <- Pt_Wide_reactive()
   if (nrow(d) == 0) return(300)
 
-# applying the same OR-filter logic used in renderPlotly
-  sel_dx   <- input$dx_filter
-  sel_lab  <- input$lab_filter
-  sel_drug <- input$drug_filter
+  sel_dx   <- if (is.null(input$dx_filter))   character(0) else input$dx_filter
+  sel_lab  <- if (is.null(input$lab_filter))  character(0) else input$lab_filter
+  sel_drug <- if (is.null(input$drug_filter)) character(0) else input$drug_filter
 
-  n <- nrow(d)
-  dx_keep   <- if (is.null(sel_dx)   || length(sel_dx)   == 0) rep(FALSE, n) else (d$Diagnosis_1 %in% sel_dx | d$Diagnosis_2 %in% sel_dx)
-  lab_keep  <- if (is.null(sel_lab)  || length(sel_lab)  == 0) rep(FALSE, n) else (d$Biomedical_Test_1 %in% sel_lab | d$Biomedical_Test_2 %in% sel_lab)
-  drug_keep <- if (is.null(sel_drug) || length(sel_drug) == 0) rep(FALSE, n) else (d$Drug_Name_1 %in% sel_drug | d$Drug_Name_2 %in% sel_drug)
-  any_selected <- (!is.null(sel_dx) && length(sel_dx) > 0) || (!is.null(sel_lab) && length(sel_lab) > 0) || (!is.null(sel_drug) && length(sel_drug) > 0)
-  d <- if (!any_selected) d else d[dx_keep | lab_keep | drug_keep, , drop = FALSE]
-  if (nrow(d) == 0) return(300)
+  dx1_d <- if (length(sel_dx) > 0)   d %>% dplyr::filter(Diagnosis_1 %in% sel_dx) else d[0, , drop = FALSE]
+  dx2_d <- if (length(sel_dx) > 0)   d %>% dplyr::filter(Diagnosis_2 %in% sel_dx) else d[0, , drop = FALSE]
+  l1_d  <- if (length(sel_lab) > 0)  d %>% dplyr::filter(Biomedical_Test_1 %in% sel_lab) else d[0, , drop = FALSE]
+  l2_d  <- if (length(sel_lab) > 0)  d %>% dplyr::filter(Biomedical_Test_2 %in% sel_lab) else d[0, , drop = FALSE]
+  r1_d  <- if (length(sel_drug) > 0) d %>% dplyr::filter(Drug_Name_1 %in% sel_drug) else d[0, , drop = FALSE]
+  r2_d  <- if (length(sel_drug) > 0) d %>% dplyr::filter(Drug_Name_2 %in% sel_drug) else d[0, , drop = FALSE]
 
-# mirroring plot-list/null-filtering to count panels
   plots <- list(
-    create_diagnosis_plot(d, "Contact_Event_Date", "Diagnosis_1", "#fa5c5c"),
-    create_diagnosis_plot(d, "Contact_Event_Date", "Diagnosis_2", "#36a358"),
-    create_time_series_plot(d, "Contact_Event_Date", "Biomedical_Value_1", "Biomedical_Test_1", "Biomedical_1_Units", "#407EC9"),
-    create_time_series_plot(d, "Contact_Event_Date", "Biomedical_Value_2", "Biomedical_Test_2", "Biomedical_2_Units", "#407EC9"),
-    create_time_series_plot(d, "Contact_Event_Date", "Drug_1_Value", "Drug_Name_1", "Drug_1_Units", "#ff9933"),
-    create_time_series_plot(d, "Contact_Event_Date", "Drug_2_Value", "Drug_Name_2", "Drug_2_Units", "#ff9933")
+    create_diagnosis_plot(dx1_d, "Contact_Event_Date", "Diagnosis_1", "#fa5c5c"),
+    create_diagnosis_plot(dx2_d, "Contact_Event_Date", "Diagnosis_2", "#36a358"),
+    create_time_series_plot(l1_d, "Contact_Event_Date", "Biomedical_Value_1", "Biomedical_Test_1", "Biomedical_1_Units", "#407EC9"),
+    create_time_series_plot(l2_d, "Contact_Event_Date", "Biomedical_Value_2", "Biomedical_Test_2", "Biomedical_2_Units", "#407EC9"),
+    create_time_series_plot(r1_d, "Contact_Event_Date", "Drug_1_Value", "Drug_Name_1", "Drug_1_Units", "#ff9933"),
+    create_time_series_plot(r2_d, "Contact_Event_Date", "Drug_2_Value", "Drug_Name_2", "Drug_2_Units", "#ff9933")
   )
+
   n_panels <- length(Filter(Negate(is.null), plots))
+  if (n_panels == 0) return(300)
 
   per_panel_height <- 180
   base_margin_px   <- 100
@@ -459,229 +1429,190 @@ output$combined_plot_ui <- renderUI({
   plotlyOutput("combined_plot", height = paste0(combined_height(), "px"), width = "100%")
 })
 
-# Rendering the combined plot based on selected visualisation
+# rendering the combined plot based on selected visualisation
   
 output$combined_plot <- renderPlotly({
-  filtered_data <- Pt_Wide_reactive()
-  if (nrow(filtered_data) == 0) {
+  d <- Pt_Wide_reactive()
+  if (nrow(d) == 0) {
     showNotification("No data available for the selected patient.", type = "warning")
     return(NULL)
   }
 
-  n <- nrow(filtered_data)
+  sel_dx   <- if (is.null(input$dx_filter))   character(0) else input$dx_filter
+  sel_lab  <- if (is.null(input$lab_filter))  character(0) else input$lab_filter
+  sel_drug <- if (is.null(input$drug_filter)) character(0) else input$drug_filter
 
-  sel_dx   <- input$dx_filter
-  sel_lab  <- input$lab_filter
-  sel_drug <- input$drug_filter
+  dx1_d <- if (length(sel_dx) > 0)   d %>% dplyr::filter(Diagnosis_1 %in% sel_dx) else d[0, , drop = FALSE]
+  dx2_d <- if (length(sel_dx) > 0)   d %>% dplyr::filter(Diagnosis_2 %in% sel_dx) else d[0, , drop = FALSE]
+  l1_d  <- if (length(sel_lab) > 0)  d %>% dplyr::filter(Biomedical_Test_1 %in% sel_lab) else d[0, , drop = FALSE]
+  l2_d  <- if (length(sel_lab) > 0)  d %>% dplyr::filter(Biomedical_Test_2 %in% sel_lab) else d[0, , drop = FALSE]
+  r1_d  <- if (length(sel_drug) > 0) d %>% dplyr::filter(Drug_Name_1 %in% sel_drug) else d[0, , drop = FALSE]
+  r2_d  <- if (length(sel_drug) > 0) d %>% dplyr::filter(Drug_Name_2 %in% sel_drug) else d[0, , drop = FALSE]
 
-  dx_keep   <- if (is.null(sel_dx)   || length(sel_dx)   == 0) rep(FALSE, n) else
-                 (filtered_data$Diagnosis_1 %in% sel_dx | filtered_data$Diagnosis_2 %in% sel_dx)
-
-  lab_keep  <- if (is.null(sel_lab)  || length(sel_lab)  == 0) rep(FALSE, n) else
-                 (filtered_data$Biomedical_Test_1 %in% sel_lab | filtered_data$Biomedical_Test_2 %in% sel_lab)
-
-  drug_keep <- if (is.null(sel_drug) || length(sel_drug) == 0) rep(FALSE, n) else
-                 (filtered_data$Drug_Name_1 %in% sel_drug | filtered_data$Drug_Name_2 %in% sel_drug)
-
-  any_selected <- (!is.null(sel_dx)   && length(sel_dx)   > 0) ||
-                  (!is.null(sel_lab)  && length(sel_lab)  > 0) ||
-                  (!is.null(sel_drug) && length(sel_drug) > 0)
-
-  row_keep <- if (!any_selected) rep(TRUE, n) else (dx_keep | lab_keep | drug_keep)
-
-  filtered_data <- filtered_data[row_keep, , drop = FALSE]
-  if (nrow(filtered_data) == 0) {
-    showNotification("No data after applying filters.", type = "warning")
-    return(NULL)
-  }
-
-  create_dynamic_label <- function(data, test_col = NULL, unit_col = NULL, drug_col = NULL, drug_unit_col = NULL, is_test = TRUE) {
-    if (is_test) {
-      first_non_na_test <- data[[test_col]][!is.na(data[[test_col]])][1]
-      first_non_na_unit <- if (!is.null(unit_col) && unit_col != "" && unit_col %in% names(data)) data[[unit_col]][!is.na(data[[unit_col]])][1] else NA
-      if (!is.na(first_non_na_test)) {
-        if (!is.null(first_non_na_unit) && !is.na(first_non_na_unit)) return(paste(first_non_na_test, "<br>", first_non_na_unit))
-        return(first_non_na_test)
-      }
-    } else {
-      first_non_na_drug <- data[[drug_col]][!is.na(data[[drug_col]])][1]
-      first_non_na_drug_unit <- data[[drug_unit_col]][!is.na(data[[drug_unit_col]])][1]
-      if (!is.na(first_non_na_drug)) {
-        if (!is.null(first_non_na_drug_unit) && !is.na(first_non_na_drug_unit)) return(paste(first_non_na_drug, "<br>", first_non_na_drug_unit))
-        return(first_non_na_drug)
-      }
-    }
-    return("Unknown Value")
-  }
-
-# Creating the time series plots
-  
   plot_list <- list(
-    create_diagnosis_plot(filtered_data, "Contact_Event_Date", "Diagnosis_1", "#fa5c5c"),
-    create_diagnosis_plot(filtered_data, "Contact_Event_Date", "Diagnosis_2", "#36a358"),
-    create_time_series_plot(filtered_data, "Contact_Event_Date", "Biomedical_Value_1", "Biomedical_Test_1", "Biomedical_1_Units", "#407EC9"),
-    create_time_series_plot(filtered_data, "Contact_Event_Date", "Biomedical_Value_2", "Biomedical_Test_2", "Biomedical_2_Units", "#407EC9"),
-    create_time_series_plot(filtered_data, "Contact_Event_Date", "Drug_1_Value", "Drug_Name_1", "Drug_1_Units", "#ff9933"),
-    create_time_series_plot(filtered_data, "Contact_Event_Date", "Drug_2_Value", "Drug_Name_2", "Drug_2_Units", "#ff9933")
+    create_diagnosis_plot(dx1_d, "Contact_Event_Date", "Diagnosis_1", "#fa5c5c"),
+    create_diagnosis_plot(dx2_d, "Contact_Event_Date", "Diagnosis_2", "#36a358"),
+    create_time_series_plot(l1_d, "Contact_Event_Date", "Biomedical_Value_1", "Biomedical_Test_1", "Biomedical_1_Units", "#407EC9"),
+    create_time_series_plot(l2_d, "Contact_Event_Date", "Biomedical_Value_2", "Biomedical_Test_2", "Biomedical_2_Units", "#407EC9"),
+    create_time_series_plot(r1_d, "Contact_Event_Date", "Drug_1_Value", "Drug_Name_1", "Drug_1_Units", "#ff9933"),
+    create_time_series_plot(r2_d, "Contact_Event_Date", "Drug_2_Value", "Drug_Name_2", "Drug_2_Units", "#ff9933")
   )
 
-# Creating the time series labels
-  
   label_list <- list(
-    create_dynamic_label(filtered_data, test_col = "Diagnosis_1", unit_col = "", is_test = TRUE),
-    create_dynamic_label(filtered_data, test_col = "Diagnosis_2", unit_col = "", is_test = TRUE),
-    create_dynamic_label(filtered_data, test_col = "Biomedical_Test_1", unit_col = "Biomedical_1_Units", is_test = TRUE),
-    create_dynamic_label(filtered_data, test_col = "Biomedical_Test_2", unit_col = "Biomedical_2_Units", is_test = TRUE),
-    create_dynamic_label(filtered_data, drug_col = "Drug_Name_1", drug_unit_col = "Drug_1_Units", is_test = FALSE),
-    create_dynamic_label(filtered_data, drug_col = "Drug_Name_2", drug_unit_col = "Drug_2_Units", is_test = FALSE)
+    if (!is.null(plot_list[[1]])) create_dynamic_label(dx1_d, test_col = "Diagnosis_1", unit_col = "", is_test = TRUE) else NULL,
+    if (!is.null(plot_list[[2]])) create_dynamic_label(dx2_d, test_col = "Diagnosis_2", unit_col = "", is_test = TRUE) else NULL,
+    if (!is.null(plot_list[[3]])) create_dynamic_label(l1_d,  test_col = "Biomedical_Test_1", unit_col = "Biomedical_1_Units", is_test = TRUE) else NULL,
+    if (!is.null(plot_list[[4]])) create_dynamic_label(l2_d,  test_col = "Biomedical_Test_2", unit_col = "Biomedical_2_Units", is_test = TRUE) else NULL,
+    if (!is.null(plot_list[[5]])) create_dynamic_label(r1_d,  drug_col = "Drug_Name_1", drug_unit_col = "Drug_1_Units", is_test = FALSE) else NULL,
+    if (!is.null(plot_list[[6]])) create_dynamic_label(r2_d,  drug_col = "Drug_Name_2", drug_unit_col = "Drug_2_Units", is_test = FALSE) else NULL
   )
 
-# Filtering out any null plots
-  
-  valid_plots  <- Filter(Negate(is.null), plot_list)
-  valid_labels <- label_list[!sapply(plot_list, is.null)]
+  valid_idx    <- which(!sapply(plot_list, is.null))
+  valid_plots  <- plot_list[valid_idx]
+  valid_labels <- label_list[valid_idx]
 
   if (length(valid_plots) == 0) {
     showNotification("No valid plots for the current filters.", type = "warning")
     return(NULL)
   }
 
-# Creating the combined plot output
+  n_panels <- length(valid_plots)
 
-per_panel_height <- 180
-base_margin_px   <- 100 
+  combined_plot <- plotly::subplot(
+    valid_plots,
+    nrows  = n_panels,
+    shareX = TRUE,
+    titleX = TRUE
+  ) %>%
+    layout(
+      annotations = lapply(seq_along(valid_labels), function(i) {
+        list(
+          x = -0.10,
+          y = 1 - (i - 1) * (1 / n_panels) - 0.11,
+          text = valid_labels[[i]],
+          showarrow = FALSE,
+          xref = "paper",
+          yref = "paper",
+          xanchor = "center",
+          yanchor = "middle",
+          textangle = 0,
+          font = list(size = 14)
+        )
+      }),
+      height = combined_height()
+    )
 
-n_panels <- length(valid_plots)
-total_height <- max(200, n_panels * per_panel_height + base_margin_px)
-
-combined_plot <- plotly::subplot(
-  valid_plots,
-  nrows  = n_panels,
-  shareX = TRUE,
-  titleX = TRUE
-) %>%
-  layout(
-    annotations = lapply(seq_along(valid_labels), function(i) {
-      list(
-        x = -0.10,
-        y = 1 - (i - 1) * (1 / n_panels) - 0.11,
-        text = valid_labels[[i]],
-        showarrow = FALSE,
-        xref = "paper",
-        yref = "paper",
-        xanchor = "center",
-        yanchor = "middle",
-        textangle = 0,
-        font = list(size = 14)
-      )
-    }),
-    height = combined_height()
-  )
-
-
-  return(combined_plot)
+  combined_plot
 })
 
-
-# Creating the patient report output
+# creating the patient report output
   
+generate_fake_nhs_number <- function(seed_int) {
+
+  make_one <- function() {
+    d <- sample(0:9, size = 9, replace = TRUE)
+
+    weights <- 10:2
+    s <- sum(d * weights)
+    r <- s %% 11
+    check <- 11 - r
+    if (check == 11) check <- 0
+    if (check == 10) return(NULL)
+
+    digits <- c(d, check)
+    paste0(digits, collapse = "")
+  }
+  
+  old_seed <- if (exists(".Random.seed", envir = .GlobalEnv)) .Random.seed else NULL
+  on.exit({ if (!is.null(old_seed)) .Random.seed <<- old_seed }, add = TRUE)
+
+  set.seed(seed_int)
+
+  out <- NULL
+  while (is.null(out)) out <- make_one()
+
+  paste0(substr(out, 1, 3), " ", substr(out, 4, 6), " ", substr(out, 7, 10))
+}
+
+# creating the patient report output
+
 output$patient_report <- renderUI({
+  req(Pt_Wide_reactive())
+
   filtered_data <- Pt_Wide_reactive()
-  
-  if (nrow(filtered_data) == 0) {
-    return("No data available for the selected patient.")
-  }
-  
-  patient_name <- trimws(filtered_data$Patient_Name[1])
-  patient_gender <- trimws(filtered_data$Patient_Gender[1])
-  
-  if (!is.null(filtered_data$Patient_DOB[1]) && !is.na(filtered_data$Patient_DOB[1])) {
-    patient_dob <- as.Date(filtered_data$Patient_DOB[1], format = "%Y-%m-%d")  
+  req(nrow(filtered_data) > 0)
+
+  patient_name <- filtered_data$Patient_Name[1]
+  patient_sex  <- filtered_data$Patient_Gender[1]
+
+  seed <- sum(utf8ToInt(as.character(patient_name)))
+
+  nhs_number <- generate_fake_nhs_number(seed)
+
+  dob_raw <- filtered_data$Patient_DOB[1]
+  if (inherits(dob_raw, "Date")) {
+    patient_dob <- dob_raw
   } else {
-    patient_dob <- NA
+    patient_dob <- suppressWarnings(lubridate::parse_date_time(
+      as.character(dob_raw),
+      orders = c("Y-m-d", "Y/m/d", "d/m/Y", "d-m-Y", "Y-m-d H:M:S", "d/m/Y H:M:S"),
+      tz = "UTC"
+    ))
+    patient_dob <- as.Date(patient_dob)
   }
 
+# age
+  
+  patient_age <- NA_integer_
   if (!is.na(patient_dob)) {
-    patient_age <- floor(as.numeric(difftime(Sys.Date(), patient_dob, units = "weeks")) / 52.25)
-  } else {
-    patient_age <- "Unknown"
+    patient_age <- floor(lubridate::time_length(lubridate::interval(patient_dob, Sys.Date()), "years"))
   }
+
+# fictional placeholder metrics
   
-  diagnoses <- filtered_data %>%
-    select(First_Diagnosis, Second_Diagnosis, Contact_Event_Date) %>%
-    filter(!is.na(First_Diagnosis) | !is.na(Second_Diagnosis))
+  old_seed <- if (exists(".Random.seed", envir = .GlobalEnv)) .Random.seed else NULL
+  on.exit({ if (!is.null(old_seed)) .Random.seed <<- old_seed }, add = TRUE)
 
-  diagnosis_report <- "No formal diagnoses to date."
-  if (nrow(diagnoses) > 0) {
-    diagnosis_entries <- character()
-    
-    if (!is.na(diagnoses$First_Diagnosis[1])) {
-      first_diagnosis <- trimws(diagnoses$First_Diagnosis[1])
-      first_diagnosis_date <- diagnoses$Contact_Event_Date[which(!is.na(diagnoses$First_Diagnosis))[1]]
-      diagnosis_entries <- c(diagnosis_entries, paste(first_diagnosis, "on", format(first_diagnosis_date, "%d/%m/%Y")))
-    }
-    
-    if (!is.na(diagnoses$Second_Diagnosis[1])) {
-      second_diagnosis <- trimws(diagnoses$Second_Diagnosis[1])
-      second_diagnosis_date <- diagnoses$Contact_Event_Date[which(!is.na(diagnoses$Second_Diagnosis))[1]]
-      diagnosis_entries <- c(diagnosis_entries, paste(second_diagnosis, "on", format(second_diagnosis_date, "%d/%m/%Y")))
-    }
-    
-    if (length(diagnosis_entries) > 0) {
-      diagnosis_report <- paste("Patient diagnosed with", 
-                                 paste(diagnosis_entries, collapse = " and "), 
-                                 sep = " ")
-    }
-  }
+  set.seed(seed)
+
+  weight_kg <- round(runif(1, 55, 110), 0)
+  height_m_internal <- round(runif(1, 1.50, 1.90), 2)
+  bmi <- round(weight_kg / (height_m_internal^2), 1)
+
+  allergy_options <- c("None known", "Penicillin (rash)", "Peanuts (anaphylaxis)", "Ibuprofen (wheeze)", "Latex (contact dermatitis)")
+  allergies <- sample(allergy_options, 1)
+
+# residential / carer status
   
-  prescriptions <- filtered_data %>%
-    select(First_Drug_Name, Second_Drug_Name, Contact_Event_Date) %>%
-    filter(!is.na(First_Drug_Name) | !is.na(Second_Drug_Name))
+  residential_options <- c("Lives alone", "Lives with family", "Assisted living")
+  residential_status <- sample(residential_options, 1, prob = c(0.40, 0.45, 0.15))
 
-  prescription_report <- "No prescriptions to date."
-  if (nrow(prescriptions) > 0) {
-    prescription_entries <- character()
-    
-    if (!is.na(prescriptions$First_Drug_Name[1])) {
-      first_drug <- trimws(prescriptions$First_Drug_Name[1])
-      first_drug_date <- prescriptions$Contact_Event_Date[which(!is.na(prescriptions$First_Drug_Name))[1]]
-      prescription_entries <- c(prescription_entries, paste(first_drug, "on", format(first_drug_date, "%d/%m/%Y")))
-    }
-    
-    if (!is.na(prescriptions$Second_Drug_Name[1])) {
-      second_drug <- trimws(prescriptions$Second_Drug_Name[1])
-      second_drug_date <- prescriptions$Contact_Event_Date[which(!is.na(prescriptions$Second_Drug_Name))[1]]
-      prescription_entries <- c(prescription_entries, paste(second_drug, "on", format(second_drug_date, "%d/%m/%Y")))
-    }
-    
-    if (length(prescription_entries) > 0) {
-      prescription_report <- paste("Patient prescribed", 
-                                   paste(prescription_entries, collapse = " and "), 
-                                   sep = " ")
-    }
-  }
-  
-  if (!endsWith(diagnosis_report, ".")) {
-   diagnosis_report <- paste0(diagnosis_report, ".")
+  if (residential_status == "Assisted living") {
+    carer_options <- c("Full time care", "Has part-time carer (non-family)")
+    carer_status <- sample(carer_options, 1, prob = c(0.70, 0.30))
+  } else if (residential_status == "Lives alone") {
+    carer_options <- c("No carer", "Has part-time carer (family)", "Has part-time carer (non-family)", "Full time care")
+    carer_status <- sample(carer_options, 1, prob = c(0.55, 0.20, 0.20, 0.05))
+  } else { 
+    carer_options <- c("No carer", "Has part-time carer (family)", "Has part-time carer (non-family)", "Full time care")
+    carer_status <- sample(carer_options, 1, prob = c(0.45, 0.40, 0.10, 0.05))
   }
 
-  if (!endsWith(prescription_report, ".")) {
-   prescription_report <- paste0(prescription_report, ".")
-  }
-
-
-  report <- HTML(paste("<strong>Patient Name:</strong>", patient_name, "<br>",
-                       "<strong>Sex:</strong>", patient_gender, "<br>",
-                       "<strong>Date of Birth:</strong>", ifelse(!is.na(patient_dob), format(patient_dob, "%d/%m/%Y"), "Unknown"), "<br>",
-                       "<strong>Age:</strong>", patient_age, "years", "<br>",
-                       "<strong>Diagnosis:</strong>", diagnosis_report, "<br>",
-                       "<strong>Prescription(s):</strong>", prescription_report))
-  
-  report <- trimws(report)
-  return(report)
+  tagList(
+    tags$p(
+      tags$strong("NHS Number: "), nhs_number, tags$br(),
+      tags$strong("Sex: "), patient_sex, tags$br(),
+      tags$strong("Age: "), ifelse(is.na(patient_age), "Unknown", paste0(patient_age, " years")), tags$br(),
+      tags$strong("Weight: "), paste0(weight_kg, " kg"), tags$br(),
+      tags$strong("BMI: "), bmi, tags$br(),
+      tags$strong("Allergies: "), allergies, tags$br(),
+      tags$strong("Residential status: "), residential_status, tags$br(),
+      tags$strong("Carer status: "), carer_status
+    )
+  )
 })
 
-# Creating the patient dataset download
+# creating the patient dataset download
 
 output$downloadData <- downloadHandler(
   filename = function() {
@@ -692,7 +1623,7 @@ output$downloadData <- downloadHandler(
     write.xlsx(filtered_data, file)  
   }
 )
-  
+
 }
 
 shinyApp(ui = ui, server = server, options = list(height = 2200))
