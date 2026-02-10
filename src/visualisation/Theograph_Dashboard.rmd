@@ -544,21 +544,21 @@ fluidRow(
   column(
     width = 4,
     h3("Diagnoses"),
-    p(tags$em("Date included is of initial diagnosis."), style = "margin-top:-10px; margin-bottom:6px; color:#666; font-size:11pt;"),
+    p(tags$em("Date included relates to initial diagnosis."), style = "margin-top:-10px; margin-bottom:6px; color:#666; font-size:11pt;"),
     hr(),
     uiOutput("dx_filter_ui", container = div, class = "info-card")
   ),
   column(
     width = 4,
     h3("Biomedical tests"),
-    p(tags$em("Date included is of latest test."), style = "margin-top:-10px; margin-bottom:6px; color:#666; font-size:11pt;"),
+    p(tags$em("Date included relates to latest test."), style = "margin-top:-10px; margin-bottom:6px; color:#666; font-size:11pt;"),
     hr(),
     uiOutput("lab_filter_ui", container = div, class = "info-card")
   ),
   column(
     width = 4,
     h3("Prescriptions"),
-    p(tags$em("Date included is of initial prescription."), style = "margin-top:-10px; margin-bottom:6px; color:#666; font-size:11pt;"),
+    p(tags$em("Date included relates to initial prescription."), style = "margin-top:-10px; margin-bottom:6px; color:#666; font-size:11pt;"),
     hr(),
     uiOutput("drug_filter_ui", container = div, class = "info-card")
   )
