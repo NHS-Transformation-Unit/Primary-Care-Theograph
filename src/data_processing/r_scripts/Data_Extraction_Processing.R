@@ -27,12 +27,12 @@ is_metformin_term <- function(x) {
 }
 
 random_metformin_strength_mg <- function(n = 1L) {
-
+  
   sample(c(500, 850, 1000), size = n, replace = TRUE, prob = c(0.70, 0.15, 0.15))
 }
 
 random_sertraline_strength_mg <- function(n = 1L) {
-
+  
   sample(c(50, 100), size = n, replace = TRUE, prob = c(0.75, 0.25))
 }
 
@@ -64,11 +64,9 @@ make_synth_rows <- function(patient_name,
   )
 }
 
-# ----------------------------
-# 1) Load raw data
-# ----------------------------
-Raw_Extr_df <- read.csv(here("data", "raw_extracts", "Raw_Patient_Extract.csv"), header = TRUE)
+# loading raw data
 
+Raw_Extr_df <- read.csv(here("data", "raw_extracts", "Raw_Patient_Extract.csv"), header = TRUE)
 
 # defining terms to include
 
@@ -131,7 +129,6 @@ all_allowed_terms <- c(assay_terms, diagnosis_terms, lipid_drug_terms, htn_drug_
 
 # filtering and standardisation
 
-
 Raw_Extr_df_Filter <- Raw_Extr_df %>%
   mutate(
     is_metformin = is_metformin_term(term),
@@ -147,7 +144,7 @@ Raw_Extr_df_Filter <- Raw_Extr_df %>%
       TRUE ~ "NotKnown"
     ),
     
-    # units
+# units
     
     units = case_when(
       term %in% c(lipid_drug_terms, htn_drug_terms, dm_drug_terms, mdd_drug_terms) | is_metformin ~ "mg",
@@ -156,7 +153,7 @@ Raw_Extr_df_Filter <- Raw_Extr_df %>%
       TRUE ~ units
     ),
     
-    # values
+# values
     
     value = case_when(
       term %in% c(lipid_drug_terms, htn_drug_terms, dm_drug_terms, mdd_drug_terms) | is_metformin ~ extract_strength_mg(term),
@@ -165,7 +162,7 @@ Raw_Extr_df_Filter <- Raw_Extr_df %>%
     
     value = if_else(is_metformin & is.na(value), random_metformin_strength_mg(dplyr::n()), value),
     
-    # harmonising labels
+# harmonising labels
     
     Contact_Event_Term = case_when(
       term == "Lying diastolic blood pressure (observable entity)" ~ "Diastolic BP",
@@ -195,7 +192,7 @@ Raw_Extr_df_Filter <- Raw_Extr_df %>%
     )
   ) %>%
   
-  # same patient mapping
+# same patient mapping
   
   mutate(Patient_Name = case_when(
     PK_Patient_ID == "610673" ~ "Olivia Davies",
@@ -276,7 +273,7 @@ choose_dates_from_patient <- function(df, patient_name, n = 6L) {
   dts <- df %>% filter(Patient_Name == patient_name) %>% pull(Contact_Event_Date) %>% unique()
   dts <- dts[!is.na(dts)]
   if (length(dts) == 0) {
-
+    
     return(format(seq.Date(as.Date("2024-01-01"), by = "month", length.out = n), "%d/%m/%Y"))
   }
   
@@ -338,7 +335,7 @@ rhea_has_any_diag <- Raw_Extr_df_Filter %>% filter(Patient_Name == "Rhea Desai",
 rhea_has_any_med  <- Raw_Extr_df_Filter %>% filter(Patient_Name == "Rhea Desai", Contact_Record_Category == "Medication") %>% nrow() > 0
 
 if (!rhea_has_any_diag && !rhea_has_any_med) {
-
+  
   rhea_demo <- get_patient_demographics(Raw_Extr_df_Filter, "Rhea Desai")
   dates <- choose_dates_from_patient(Raw_Extr_df_Filter, "Rhea Desai", n = 6L)
   
@@ -353,7 +350,7 @@ if (!rhea_has_any_diag && !rhea_has_any_med) {
     synth_rows[[length(synth_rows) + 1]] <- make_synth_rows("Rhea Desai", rhea_demo$Patient_DOB, rhea_demo$Sex, rhea_demo$Patient_Gender,
                                                             dates = dates, record_category = "Medication", event_term = "Metformin",
                                                             value = random_metformin_strength_mg(length(dates)), units = rep("mg", length(dates)))
-
+    
     hba1c_vals <- round(runif(length(dates), min = 45, max = 95))
     synth_rows[[length(synth_rows) + 1]] <- make_synth_rows("Rhea Desai", rhea_demo$Patient_DOB, rhea_demo$Sex, rhea_demo$Patient_Gender,
                                                             dates = dates, record_category = "Biomedical Assay", event_term = "HbA1c",
@@ -404,7 +401,7 @@ if (!rhea_has_any_diag && !rhea_has_any_med) {
   Raw_Extr_df_Filter <- bind_rows(Raw_Extr_df_Filter, bind_rows(synth_rows))
 }
 
-# Final clean-up after injection
+# final clean-up after injection
 
 Raw_Extr_df_Filter <- Raw_Extr_df_Filter %>%
   mutate(
@@ -413,8 +410,7 @@ Raw_Extr_df_Filter <- Raw_Extr_df_Filter %>%
     Units = if_else(Contact_Record_Category == "Medication" & (is.na(Units) | Units == ""), "mg", Units)
   )
 
-
-# converting to wife format
+# converting to wide format
 
 Pt_Proc_Long <- Raw_Extr_df_Filter
 
@@ -448,7 +444,30 @@ med_rows <- Pt_Proc_Long %>%
 non_med_rows <- Pt_Proc_Long %>%
   filter(Contact_Record_Category != "Medication")
 
+# looking for duplicated values on same date
+
 Pt_Proc_Long <- bind_rows(non_med_rows, med_rows)
+
+assay_rows <- Pt_Proc_Long %>%
+  filter(Contact_Record_Category == "Biomedical Assay") %>%
+  mutate(Value = suppressWarnings(as.numeric(Value))) %>%
+  group_by(Patient_Name, Contact_Event_Date, Contact_Event_Term) %>%
+  summarise(
+    Patient_DOB = dplyr::first(Patient_DOB),
+    Sex = dplyr::first(Sex),
+    Patient_Gender = dplyr::first(Patient_Gender),
+    Contact_Record_Category = dplyr::first(Contact_Record_Category),
+    Units = dplyr::first(Units),
+    Prescription_Instruction = dplyr::first(Prescription_Instruction),
+    Contact_Event_Category = dplyr::first(Contact_Event_Category),
+    Value = if (all(is.na(Value))) NA_real_ else mean(Value, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+non_assay_rows <- Pt_Proc_Long %>%
+  filter(Contact_Record_Category != "Biomedical Assay")
+
+Pt_Proc_Long <- bind_rows(non_assay_rows, assay_rows)
 
 bp_complete_patients <- Pt_Proc_Long %>%
   filter(Contact_Record_Category == "Biomedical Assay",
