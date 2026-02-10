@@ -14,28 +14,51 @@ body {
     background-color: #fff;
     color: #333;
     font-family: Franklin Gothic;
-    font-size: 11pt;
+    font-size: 12pt;
     font-weight: 300;
 }
 
 h1, h2, h3, h4 {
-  color: #407EC9;
+  color: #2F6FB5;
 }
 
 hr {
-  color: #407EC9;
-  border-color: #407EC9;
+  color: #2F6FB5;
+  border-color: #2F6FB5;
 }
 
 .navbar {
-    background-color: #407EC9; 
-    border-color: #407EC9; 
+    background-color: #2F6FB5; 
+    border-color: #2F6FB5; 
     color: #fff; 
 }
 
+/* Full-width layout: remove R Markdown max-width constraints */
+body .main-container,
+body .container,
+body .container-fluid {
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
+
+/* Accessibility: ensure active tab has sufficient contrast */
+.navbar-default .navbar-nav > .active > a,
+.navbar-default .navbar-nav > .active > a:hover,
+.navbar-default .navbar-nav > .active > a:focus {
+  background-color: #ffffff !important;
+  color: #2F6FB5 !important;
+}
+
+/* Optional: clearer hover state on inactive tabs */
+.navbar-default .navbar-nav > li > a:hover,
+.navbar-default .navbar-nav > li > a:focus {
+  background-color: rgba(255,255,255,0.15) !important;
+}
+
 .btn-primary {
-    background-color: #407EC9; 
-    border-color: #407EC9;
+    background-color: #2F6FB5; 
+    border-color: #2F6FB5;
     color: #fff; 
 }
 
@@ -46,7 +69,7 @@ hr {
 }
 
 a {
-    color: #407EC9; 
+    color: #2F6FB5; 
 }
 
 .toc.float-toc {
@@ -55,9 +78,9 @@ a {
 
 .plot-container {
     width: 100% !important;
-    max-width: 1700px !important;
-    margin-left: auto !important;
-    margin-right: auto !important;
+    max-width: none !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
   }
   
 .js-plotly-plot .plotly,
@@ -74,7 +97,7 @@ a {
 
 html, body, .container-fluid, .tab-content, .tab-pane {
   height: auto !important;
-  min-height: 100vh;
+  min-height: 0 !important;
   overflow: visible !important;
 }
 
@@ -84,7 +107,7 @@ html, body, .container-fluid, .tab-content, .tab-pane {
 
 .info-card{
   background:#f7f9fc;
-  border:2px solid #407EC9;
+  border:2px solid #2F6FB5;
   padding:12px 14px;
   border-radius:10px;
 }
@@ -114,7 +137,7 @@ html, body, .container-fluid, .tab-content, .tab-pane {
   border-bottom:1px solid #e3e8f0;
   margin-bottom:10px;
   font-weight:700;
-  color:#407EC9;
+  color:#2F6FB5;
 }
 
 .note-card{
@@ -125,9 +148,21 @@ html, body, .container-fluid, .tab-content, .tab-pane {
   margin-bottom:12px;
 }
 
+
+.note-card.clickable{
+  cursor:pointer;
+}
+.note-card.clickable:hover{
+  border-color:#2F6FB5;
+}
+.note-card.clickable:focus{
+  outline:3px solid rgba(64,126,201,0.35);
+  outline-offset:2px;
+}
+
 .note-card.pinned{
   background:#f7f9fc;
-  border:2px solid #407EC9;
+  border:2px solid #2F6FB5;
   border-radius:10px;
 }
 
@@ -144,8 +179,8 @@ html, body, .container-fluid, .tab-content, .tab-pane {
 
 .note-meta{
   font-weight:700;
-  color:#407EC9;
-  font-size:10.5pt;
+  color:#2F6FB5;
+  font-size:12pt;
   margin-bottom:8px;
 }
 
@@ -165,13 +200,14 @@ mark{
 </style>
 
 ```{css, echo=FALSE}
-    body .main-container {
-      max-width: 1700px !important;
-      width: 1700px !important;
-    }
-    body {
-      max-width: 1700px !important;
-    }
+body .main-container {
+  max-width: 100% !important;
+  width: 100% !important;
+}
+body {
+  max-width: 100% !important;
+}
+
 ```
 
 ```{r setup, include=FALSE}
@@ -180,11 +216,13 @@ knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
 source("../config/r_scripts/packages.R")
 source("../data_processing/r_scripts/Data_Extraction_Processing.R")
 
-# Loading the processed data
+library(jsonlite)
+
+# loading the processed data
 
 Pt_Proc_Wide <- read_excel(here("data", "processed_extracts", "Proc_Patient_Extract.xlsx"))
 
-# Creating series to call within the patient selection drop down
+# creating series to call within the patient selection drop down
 
 patient_names <- unique(Pt_Proc_Wide$Patient_Name)
 
@@ -194,7 +232,7 @@ patient_names <- unique(Pt_Proc_Wide$Patient_Name)
 
 ```{r examplePlot, fig.height=18, echo=FALSE}
 
-# Function to create time series plots for biomedical and prescription time series
+# function to create time series plots for biomedical and prescription time series
 
 create_time_series_plot <- function(data, date_col, y_col, test_col, unit_col, vis_colour) {
   tryCatch({
@@ -225,6 +263,16 @@ create_time_series_plot <- function(data, date_col, y_col, test_col, unit_col, v
 
     data <- data[!is.na(data[[y_col]]), ]
     if (nrow(data) == 0) return(NULL)
+    
+    data <- dplyr::as_tibble(data) %>%
+      dplyr::group_by(.data[[date_col]]) %>%
+      dplyr::summarise(
+        "{test_col}" := dplyr::first(.data[[test_col]]),
+        "{unit_col}" := dplyr::first(.data[[unit_col]]),
+        "{y_col}" := if (all(is.na(.data[[y_col]]))) NA_real_ else mean(.data[[y_col]], na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
+      dplyr::arrange(.data[[date_col]])
 
     data$tooltip_text <- paste0(
       "Date: ", format(data[[date_col]], "%d/%m/%Y"), "<br>",
@@ -253,7 +301,7 @@ create_time_series_plot <- function(data, date_col, y_col, test_col, unit_col, v
         limits = c(as.Date("2020-01-01"), as.Date(Sys.Date()))
       ) +
       theme_minimal() +
-      theme(axis.title.y = element_text(size = 12))
+      theme(axis.title.y = element_text(size = 14))
 
     if (!is.null(ref)) {
 
@@ -336,22 +384,33 @@ ui <- navbarPage(
         background-color: #fff;
         color: #333;
         font-family: Franklin Gothic, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-        font-size: 11pt;
+        font-size: 12pt;
         font-weight: 300;
       }
-      h1, h2, h3, h4 { color: #407EC9; }
-      hr { color: #407EC9; border-color: #407EC9; }
-      .navbar { background-color: #407EC9; border-color: #407EC9; }
+      h1, h2, h3, h4 { color: #2F6FB5; }
+      hr { color: #2F6FB5; border-color: #2F6FB5; }
+      .navbar { background-color: #2F6FB5; border-color: #2F6FB5; }
       .navbar .navbar-brand, .navbar .navbar-nav > li > a { color: #fff !important; }
-      .btn-primary, .btn-download { background-color: #407EC9; border-color: #407EC9; color: #fff; }
-      a { color: #407EC9; }
+      /* Accessibility: ensure active tab has sufficient contrast */
+      .navbar-default .navbar-nav > .active > a,
+      .navbar-default .navbar-nav > .active > a:hover,
+      .navbar-default .navbar-nav > .active > a:focus {
+        background-color: #ffffff !important;
+        color: #2F6FB5 !important;
+      }
+      .navbar-default .navbar-nav > li > a:hover,
+      .navbar-default .navbar-nav > li > a:focus {
+        background-color: rgba(255,255,255,0.15) !important;
+      }
+      .btn-primary, .btn-download { background-color: #2F6FB5; border-color: #2F6FB5; color: #fff; }
+      a { color: #2F6FB5; }
       .toc.float-toc { margin-bottom: 20px; }
-      .plot-container { width: 100% !important; max-width: 1700px !important; margin-left: auto !important; margin-right: auto !important; }
+      .plot-container { width: 100% !important; max-width: none !important; margin-left: 0 !important; margin-right: 0 !important; }
       .shiny-input-container p em { color: #666; }
 
       .info-card{
         background:#f7f9fc;
-        border:2px solid #407EC9;
+        border:2px solid #2F6FB5;
         padding:12px 14px;
         border-radius:10px;
       }
@@ -371,6 +430,14 @@ ui <- navbarPage(
   overflow-y: auto;
 }
 
+body .main-container,
+body .container,
+body .container-fluid {
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
+
 .month-header{
   position: sticky;
   top: 0;
@@ -379,8 +446,8 @@ ui <- navbarPage(
   padding: 10px 14px;
   margin: 0;
   font-weight: 700;
-  color: #407EC9;
-  border-bottom: 2px solid #407EC9;
+  color: #2F6FB5;
+  border-bottom: 2px solid #2F6FB5;
 }
 
 .note-card{
@@ -389,14 +456,26 @@ ui <- navbarPage(
   border-bottom: 1px solid #e3e8f0;  
 }
 
+
+.note-card.clickable{
+  cursor:pointer;
+}
+.note-card.clickable:hover{
+  border-color:#2F6FB5;
+}
+.note-card.clickable:focus{
+  outline:3px solid rgba(64,126,201,0.35);
+  outline-offset:2px;
+}
+
 .note-card:last-child{
   border-bottom: none;
 }
 
 .note-meta{
   font-weight: 700;
-  color: #407EC9;           
-  font-size: 11pt;
+  color: #2F6FB5;           
+  font-size: 12pt;
   margin: 0 0 6px 0;
 }
 
@@ -415,7 +494,7 @@ mark{
 
 .note-card.pinned{
   background: #f7f9fc;
-  border: 2px solid #407EC9;
+  border: 2px solid #2F6FB5;
   border-radius: 10px;
 }
 
@@ -435,7 +514,7 @@ fluidRow(
   column(
     width = 4,
     h3("Patient selection"),
-    p(tags$em("Please select your patient's name from the filter below."), style = "margin-top:-10px; margin-bottom:6px; color:#666; font-size:10pt;"),
+    p(tags$em("Please select your patient's name from the filter below."), style = "margin-top:-10px; margin-bottom:6px; color:#666; font-size:11pt;"),
     hr(),
     div(
       class = "info-card",
@@ -446,14 +525,14 @@ fluidRow(
   column(
     width = 4,
     h3("Patient information"),
-    p(tags$em("General patient information."), style = "margin-top:-10px; margin-bottom:6px; color:#666; font-size:10pt;"),
+    p(tags$em("General patient information."), style = "margin-top:-10px; margin-bottom:6px; color:#666; font-size:11pt;"),
     hr(),
     uiOutput("patient_report", container = div, class = "info-card")
   ),
   column(
     width = 4,
     h3("Clinical notes"),
-    p(tags$em("Most recently available note: see 'Clinical Notes' tab for further information."), style = "margin-top:-10px; margin-bottom:6px; color:#666; font-size:10pt;"),
+    p(tags$em("Most recently available note: see 'Clinical Notes' tab for further information."), style = "margin-top:-10px; margin-bottom:6px; color:#666; font-size:11pt;"),
     hr(),
     div(class = "info-card notes-preview", uiOutput("clinical_free_text"))
   )
@@ -465,21 +544,21 @@ fluidRow(
   column(
     width = 4,
     h3("Diagnoses"),
-    p(tags$em("Date included is of initial diagnosis."), style = "margin-top:-10px; margin-bottom:6px; color:#666; font-size:10pt;"),
+    p(tags$em("Date included is of initial diagnosis."), style = "margin-top:-10px; margin-bottom:6px; color:#666; font-size:11pt;"),
     hr(),
     uiOutput("dx_filter_ui", container = div, class = "info-card")
   ),
   column(
     width = 4,
     h3("Biomedical tests"),
-    p(tags$em("Date included is of latest test."), style = "margin-top:-10px; margin-bottom:6px; color:#666; font-size:10pt;"),
+    p(tags$em("Date included is of latest test."), style = "margin-top:-10px; margin-bottom:6px; color:#666; font-size:11pt;"),
     hr(),
     uiOutput("lab_filter_ui", container = div, class = "info-card")
   ),
   column(
     width = 4,
     h3("Prescriptions"),
-    p(tags$em("Date included is of initial prescription."), style = "margin-top:-10px; margin-bottom:6px; color:#666; font-size:10pt;"),
+    p(tags$em("Date included is of initial prescription."), style = "margin-top:-10px; margin-bottom:6px; color:#666; font-size:11pt;"),
     hr(),
     uiOutput("drug_filter_ui", container = div, class = "info-card")
   )
@@ -595,7 +674,6 @@ br(),
     )
 )
 
-
 # server
 
 # helper function to build dynamic y-axis labels for plots
@@ -648,6 +726,24 @@ server <- function(input, output, session) {
     )
   }
 
+# pop-out modal for clinical notes (click / keyboard)
+observeEvent(input$note_click, {
+  info <- input$note_click
+  req(info$body)
+
+  showModal(
+    modalDialog(
+      title = paste0(info$date, " • ", info$type, " • ", info$patient),
+      tags$div(
+        style = "white-space: pre-wrap; max-height: 70vh; overflow-y: auto;",
+        info$body
+      ),
+      easyClose = TRUE,
+      size = "l",
+      footer = modalButton("Close")
+    )
+  )
+})
 
 # preset filter helpers
   
@@ -710,7 +806,6 @@ server <- function(input, output, session) {
       mutate(Contact_Event_Date = suppressWarnings(as.Date(gsub("/", "-", as.character(Contact_Event_Date)), format = "%Y-%m-%d")))
 })
   
-
 # summary tables
   
   dx_table_data <- reactive({
@@ -724,10 +819,10 @@ server <- function(input, output, session) {
         names_to = "Diagnosis_Field",
         values_to = "Diagnosis"
       ) %>%
-      filter(!is.na(Diagnosis), Diagnosis != "") %>%
-      mutate(Contact_Event_Date = as.Date(Contact_Event_Date)) %>%
-      distinct(Contact_Event_Date, Diagnosis) %>%
-      arrange(Contact_Event_Date)
+      dplyr::filter(!is.na(Diagnosis), Diagnosis != "") %>%
+      dplyr::mutate(Contact_Event_Date = as.Date(Contact_Event_Date)) %>%
+      dplyr::distinct(Contact_Event_Date, Diagnosis) %>%
+      dplyr::arrange(Contact_Event_Date)
 
     if (!is.null(input$dx_filter)) {
       if (length(input$dx_filter) == 0) {
@@ -840,8 +935,7 @@ server <- function(input, output, session) {
     )
   })
 
-
-# sisualisations toggle (shown by default)
+# visualisations toggle (shown by default)
 show_visualisations <- reactiveVal(TRUE)
 
 observeEvent(input$toggle_visualisations, {
@@ -955,7 +1049,6 @@ make_fake_notes <- function(patient_name) {
   )
 }
 
-
 # clinical notes data (and month/year filters)
 
 notes_data <- reactive({
@@ -1029,7 +1122,6 @@ output$notes_month_ui <- renderUI({
   )
 })
 
-
 # rendering timeline UI
 
 output$clinical_notes_timeline <- renderUI({
@@ -1090,14 +1182,32 @@ output$clinical_notes_timeline <- renderUI({
 
       body_html <- highlight_term(notes$note_body[i], q)
 
+      payload <- jsonlite::toJSON(
+        list(
+          date = format(notes$note_date[i], "%d %b %Y"),
+          type = as.character(notes$note_type[i]),
+          patient = nm,
+          body = as.character(notes$note_body[i])
+        ),
+        auto_unbox = TRUE
+      )
+
       out <- c(out, list(
         tags$div(
-          class = paste("note-card", if (is_latest) "pinned" else ""),
+          class = paste("note-card clickable", if (is_latest) "pinned" else ""),
+          role = "button",
+          tabindex = "0",
+          `aria-label` = paste0("Open note: ", meta_line),
+          onclick = paste0("Shiny.setInputValue('note_click', ", payload, ", {priority:'event'});"),
+          onkeydown = paste0(
+            "if(event.key==='Enter' || event.key===' '){",
+            "Shiny.setInputValue('note_click', ", payload, ", {priority:'event'});",
+            "event.preventDefault();}"
+          ),
           tags$div(class = "note-meta", meta_line),
           tags$div(class = "note-body", HTML(body_html))
         )
-      ))
-    }
+      ))}
   }
 
   do.call(tagList, out)
@@ -1123,8 +1233,7 @@ drug_choices <- reactive({
   ch[!is.na(ch) & ch != ""]
 })
 
-
-# preset dropdown UI (dynamic per selected patient)
+# preset dropdown UI
 
 output$preset_filter_ui <- renderUI({
   
@@ -1411,8 +1520,8 @@ combined_height <- reactive({
   plots <- list(
     create_diagnosis_plot(dx1_d, "Contact_Event_Date", "Diagnosis_1", "#fa5c5c"),
     create_diagnosis_plot(dx2_d, "Contact_Event_Date", "Diagnosis_2", "#36a358"),
-    create_time_series_plot(l1_d, "Contact_Event_Date", "Biomedical_Value_1", "Biomedical_Test_1", "Biomedical_1_Units", "#407EC9"),
-    create_time_series_plot(l2_d, "Contact_Event_Date", "Biomedical_Value_2", "Biomedical_Test_2", "Biomedical_2_Units", "#407EC9"),
+    create_time_series_plot(l1_d, "Contact_Event_Date", "Biomedical_Value_1", "Biomedical_Test_1", "Biomedical_1_Units", "#2F6FB5"),
+    create_time_series_plot(l2_d, "Contact_Event_Date", "Biomedical_Value_2", "Biomedical_Test_2", "Biomedical_2_Units", "#2F6FB5"),
     create_time_series_plot(r1_d, "Contact_Event_Date", "Drug_1_Value", "Drug_Name_1", "Drug_1_Units", "#ff9933"),
     create_time_series_plot(r2_d, "Contact_Event_Date", "Drug_2_Value", "Drug_Name_2", "Drug_2_Units", "#ff9933")
   )
@@ -1420,9 +1529,14 @@ combined_height <- reactive({
   n_panels <- length(Filter(Negate(is.null), plots))
   if (n_panels == 0) return(300)
 
-  per_panel_height <- 180
-  base_margin_px   <- 100
-  max(200, n_panels * per_panel_height + base_margin_px)
+per_panel_height <- 130
+base_margin_px   <- 60
+raw_height <- max(200, n_panels * per_panel_height + base_margin_px)
+
+# capping max height of containers
+
+max_height <- 760
+min(raw_height, max_height)
 })
 
 output$combined_plot_ui <- renderUI({
@@ -1452,8 +1566,8 @@ output$combined_plot <- renderPlotly({
   plot_list <- list(
     create_diagnosis_plot(dx1_d, "Contact_Event_Date", "Diagnosis_1", "#fa5c5c"),
     create_diagnosis_plot(dx2_d, "Contact_Event_Date", "Diagnosis_2", "#36a358"),
-    create_time_series_plot(l1_d, "Contact_Event_Date", "Biomedical_Value_1", "Biomedical_Test_1", "Biomedical_1_Units", "#407EC9"),
-    create_time_series_plot(l2_d, "Contact_Event_Date", "Biomedical_Value_2", "Biomedical_Test_2", "Biomedical_2_Units", "#407EC9"),
+    create_time_series_plot(l1_d, "Contact_Event_Date", "Biomedical_Value_1", "Biomedical_Test_1", "Biomedical_1_Units", "#2F6FB5"),
+    create_time_series_plot(l2_d, "Contact_Event_Date", "Biomedical_Value_2", "Biomedical_Test_2", "Biomedical_2_Units", "#2F6FB5"),
     create_time_series_plot(r1_d, "Contact_Event_Date", "Drug_1_Value", "Drug_Name_1", "Drug_1_Units", "#ff9933"),
     create_time_series_plot(r2_d, "Contact_Event_Date", "Drug_2_Value", "Drug_Name_2", "Drug_2_Units", "#ff9933")
   )
@@ -1496,7 +1610,7 @@ output$combined_plot <- renderPlotly({
           xanchor = "center",
           yanchor = "middle",
           textangle = 0,
-          font = list(size = 14)
+          font = list(size = 16)
         )
       }),
       height = combined_height()
