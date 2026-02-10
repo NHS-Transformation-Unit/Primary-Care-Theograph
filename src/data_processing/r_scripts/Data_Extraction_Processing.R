@@ -69,9 +69,8 @@ make_synth_rows <- function(patient_name,
 # ----------------------------
 Raw_Extr_df <- read.csv(here("data", "raw_extracts", "Raw_Patient_Extract.csv"), header = TRUE)
 
--
-# definiging terms to include
 
+# defining terms to include
 
 # assays
 
