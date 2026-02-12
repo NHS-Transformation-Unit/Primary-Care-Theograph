@@ -1609,7 +1609,7 @@ output$combined_plot <- renderPlotly({
 
           list(
             x = -0.10,
-            y = y_main - 0.045,              # sits just underneath the main label
+            y = y_main - 0.045,             
             text = paste0("<i>", note, "</i>"),
             showarrow = FALSE,
             xref = "paper",
