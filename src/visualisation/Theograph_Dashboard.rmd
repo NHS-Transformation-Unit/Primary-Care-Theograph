@@ -263,7 +263,7 @@ create_time_series_plot <- function(data, date_col, y_col, test_col, unit_col, v
 
     data <- data[!is.na(data[[y_col]]), ]
     if (nrow(data) == 0) return(NULL)
-    
+
     data <- dplyr::as_tibble(data) %>%
       dplyr::group_by(.data[[date_col]]) %>%
       dplyr::summarise(
@@ -279,18 +279,11 @@ create_time_series_plot <- function(data, date_col, y_col, test_col, unit_col, v
       data[[test_col]], ": ", data[[y_col]], " ", data[[unit_col]]
     )
 
+    # Keep the main label clean (the ref note will be added later in the combined subplot)
     y_label <- paste(test_col, "<br>(", data[[unit_col]][1], ")", sep = "")
 
     assay_name <- as.character(stats::na.omit(unique(data[[test_col]]))[1])
     ref <- get_reference_line(assay_name)
-
-    # midpoint date for centered annotation
-    
-    x_mid <- as.Date(mean(as.numeric(range(data[[date_col]], na.rm = TRUE))), origin = "1970-01-01")
-
-    y_range_vals <- range(data[[y_col]], na.rm = TRUE)
-    y_rng <- diff(y_range_vals)
-    y_offset <- if (is.finite(y_rng) && y_rng > 0) max(y_rng * 0.07, 0.25) else 0.25
 
     plot <- ggplot(data, aes(x = !!sym(date_col), y = !!sym(y_col))) +
       geom_line(color = vis_colour) +
@@ -304,28 +297,21 @@ create_time_series_plot <- function(data, date_col, y_col, test_col, unit_col, v
       theme(axis.title.y = element_text(size = 14))
 
     if (!is.null(ref)) {
-
-      y_label_pos <- ref$y - y_offset
-
-      y_min_safe <- y_range_vals[1] + if (is.finite(y_rng) && y_rng > 0) (y_rng * 0.02) else 0
-      if (is.finite(y_label_pos) && is.finite(y_min_safe)) {
-        y_label_pos <- max(y_label_pos, y_min_safe)
-      }
-
       plot <- plot +
-        geom_hline(yintercept = ref$y, linetype = "dashed", color = vis_colour, alpha = 0.6) +
-        annotate(
-          "text",
-          x = x_mid,
-          y = y_label_pos,
-          label = ref$label,
-          size = 3.5,
-          color = vis_colour
-        )
+        geom_hline(yintercept = ref$y, linetype = "dashed", color = vis_colour, alpha = 0.6)
     }
 
-    ggplotly(plot, tooltip = "text") %>%
+    p <- ggplotly(plot, tooltip = "text") %>%
       layout(margin = list(l = 250))
+
+    # Attach reference note so the combined subplot renderer can position it under the left label
+    if (!is.null(ref)) {
+      attr(p, "ref_note") <- ref$label
+    } else {
+      attr(p, "ref_note") <- NULL
+    }
+
+    p
 
   }, error = function(e) {
     return(NULL)
@@ -1599,20 +1585,44 @@ output$combined_plot <- renderPlotly({
     titleX = TRUE
   ) %>%
     layout(
-      annotations = lapply(seq_along(valid_labels), function(i) {
-        list(
-          x = -0.10,
-          y = 1 - (i - 1) * (1 / n_panels) - 0.11,
-          text = valid_labels[[i]],
-          showarrow = FALSE,
-          xref = "paper",
-          yref = "paper",
-          xanchor = "center",
-          yanchor = "middle",
-          textangle = 0,
-          font = list(size = 16)
-        )
-      }),
+      annotations = {
+        base_ann <- lapply(seq_along(valid_labels), function(i) {
+          list(
+            x = -0.10,
+            y = 1 - (i - 1) * (1 / n_panels) - 0.11,
+            text = valid_labels[[i]],
+            showarrow = FALSE,
+            xref = "paper",
+            yref = "paper",
+            xanchor = "center",
+            yanchor = "middle",
+            textangle = 0,
+            font = list(size = 16, color = "#000000")
+          )
+        })
+
+        ref_ann <- lapply(seq_along(valid_plots), function(i) {
+          note <- attr(valid_plots[[i]], "ref_note")
+          if (is.null(note) || is.na(note) || !nzchar(note)) return(NULL)
+
+          y_main <- 1 - (i - 1) * (1 / n_panels) - 0.11
+
+          list(
+            x = -0.10,
+            y = y_main - 0.045,              # sits just underneath the main label
+            text = paste0("<i>", note, "</i>"),
+            showarrow = FALSE,
+            xref = "paper",
+            yref = "paper",
+            xanchor = "center",
+            yanchor = "middle",
+            textangle = 0,
+            font = list(size = 12, color = "#2F6FB5")
+          )
+        })
+
+        c(base_ann, Filter(Negate(is.null), ref_ann))
+      },
       height = combined_height()
     )
 
