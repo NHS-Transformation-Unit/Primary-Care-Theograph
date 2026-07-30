@@ -124,7 +124,8 @@ nhs_dark_blue <- "#003087"
 event_colours <- c(
   "Condition" = "#005EB8",
   "Biomarker" = "#DA291C",
-  "Medicine" = "#007F3B"
+  "Medicine" = "#007F3B",
+  "Risk Score" = "#AE2573"
 )
 
 format_date <- function(x) {
@@ -610,9 +611,8 @@ ui <- shiny::navbarPage(
         shiny::tags$li("Blood-pressure systolic and diastolic values share one panel but remain separate traces."),
         shiny::tags$li("Conditions are blue, biomarkers are red, systolic blood pressure is orange, and medicines are green."),
         shiny::tags$li("Active conditions and the latest biomarker values are carried forward to today for display."),
-        shiny::tags$li("QRisk2 is displayed as a biomarker time series, with values shown as percentages."),
         shiny::tags$li("Serum LDL (non-HDL) includes a dashed blue reference line at 2.6 mmol/L."),
-        shiny::tags$li("QRisk2 remains available in the Events data and patient download as well as on the timeline.")
+        shiny::tags$li("QRisk2 remains available in the Events data and patient download, but is not displayed as a summary card or timeline row.")
       ),
       shiny::p(shiny::tags$strong(
         "All patient details, events, QRisk2 values and notes are fictional and must not be used for clinical decision-making."

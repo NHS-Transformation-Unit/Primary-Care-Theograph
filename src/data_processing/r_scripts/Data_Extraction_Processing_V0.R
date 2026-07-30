@@ -193,7 +193,7 @@ validate_theograph_data <- function(patient_profile, events, clinical_notes) {
     stop("Every event and clinical note must join to Patient Profile.", call. = FALSE)
   }
 
-  allowed_types <- c("Condition", "Biomarker", "Medicine")
+  allowed_types <- c("Condition", "Biomarker", "Medicine", "Risk Score")
   unknown_types <- setdiff(unique(events$Event_Type), allowed_types)
   if (length(unknown_types) > 0L) {
     stop(
@@ -215,23 +215,11 @@ validate_theograph_data <- function(patient_profile, events, clinical_notes) {
   }
 
   qrisk_patients <- events |>
-    dplyr::filter(grepl("QRisk2", .data$Event_Name, ignore.case = TRUE)) |>
+    dplyr::filter(.data$Event_Type == "Risk Score", grepl("QRisk2", .data$Event_Name, ignore.case = TRUE)) |>
     dplyr::distinct(.data$Patient_ID) |>
     dplyr::pull(.data$Patient_ID)
   if (length(setdiff(known_ids, qrisk_patients)) > 0L) {
     stop("Every patient must have at least one QRisk2 event.", call. = FALSE)
-  }
-
-  invalid_qrisk <- events |>
-    dplyr::filter(
-      grepl("QRisk2", .data$Event_Name, ignore.case = TRUE),
-      .data$Event_Type != "Biomarker" | .data$Show_On_Timeline != "Yes"
-    )
-  if (nrow(invalid_qrisk) > 0L) {
-    stop(
-      "Every QRisk2 event must be a Biomarker with Show_On_Timeline set to Yes.",
-      call. = FALSE
-    )
   }
 
   invisible(TRUE)
@@ -336,7 +324,10 @@ process_theograph_data <- function(input_path = resolve_theograph_input()) {
     dplyr::arrange(.data$Patient_ID, .data$Display_Order, .data$Display_Series)
 
   qrisk2_events <- events |>
-    dplyr::filter(grepl("QRisk2", .data$Event_Name, ignore.case = TRUE)) |>
+    dplyr::filter(
+      .data$Event_Type == "Risk Score",
+      grepl("QRisk2", .data$Event_Name, ignore.case = TRUE)
+    ) |>
     dplyr::arrange(.data$Patient_ID, .data$Event_Date)
 
   structure(
