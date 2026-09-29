@@ -5,9 +5,9 @@ output:
     toc: false
 runtime: shiny
 ---
-  
-  <style type="text/css">
-  html,
+
+<style type="text/css">
+html,
 body {
   width: 100% !important;
   max-width: none !important;
@@ -27,12 +27,12 @@ body > .main-container,
   padding-right: 18px !important;
 }
 </style>
-  
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
 
 required_packages <- c(
-  "dplyr", "DT", "here", "htmltools", "htmlwidgets", "openxlsx", "plotly", "shiny"
+  "dplyr", "DT", "here", "htmltools", "openxlsx", "plotly", "shiny"
 )
 missing_packages <- required_packages[
   !vapply(required_packages, requireNamespace, logical(1), quietly = TRUE)
@@ -60,7 +60,7 @@ ancestor_directories <- function(start_directory, maximum_levels = 10L) {
 dashboard_input <- knitr::current_input(dir = TRUE)
 dashboard_directory <- if (
   !is.null(dashboard_input) && length(dashboard_input) > 0L &&
-  !is.na(dashboard_input[[1]]) && nzchar(dashboard_input[[1]])
+    !is.na(dashboard_input[[1]]) && nzchar(dashboard_input[[1]])
 ) {
   dirname(normalizePath(dashboard_input[[1]], winslash = "/", mustWork = FALSE))
 } else {
@@ -127,37 +127,6 @@ event_colours <- c(
   "Medicine" = "#007F3B"
 )
 
-timeline_panel_height <- 105L
-timeline_panel_gap <- 6L
-timeline_plot_margin <- list(l = 265, r = 20, t = 50, b = 55)
-
-# Colour the actual SVG panel backgrounds after Plotly has drawn the chart.
-# Sort by screen position so alternation follows the displayed panel order.
-timeline_background_js <- "
-function(el, x) {
-  function shadePanels() {
-    var panels = Array.prototype.slice.call(
-      el.querySelectorAll('.bglayer > rect.bg')
-    );
-    panels.sort(function(a, b) {
-      return parseFloat(a.getAttribute('y')) - parseFloat(b.getAttribute('y'));
-    });
-    panels.forEach(function(panel, index) {
-      panel.style.setProperty('fill', index % 2 === 0 ? '#FFFFFF' : '#F1F3F5');
-      panel.style.setProperty('fill-opacity', '1');
-    });
-  }
-
-  // Avoid duplicate listeners when Shiny redraws this widget.
-  if (el.theographShadePanels && typeof el.removeListener === 'function') {
-    el.removeListener('plotly_afterplot', el.theographShadePanels);
-  }
-  el.theographShadePanels = shadePanels;
-  el.on('plotly_afterplot', shadePanels);
-  shadePanels();
-}
-"
-
 format_date <- function(x) {
   ifelse(is.na(x), "Unknown", format(as.Date(x), "%d %B %Y"))
 }
@@ -193,7 +162,7 @@ make_hover_text <- function(data) {
 series_display_label <- function(series_data) {
   series_name <- series_data$Display_Series[[1]]
   unit_values <- unique(stats::na.omit(series_data$Units))
-  
+
   if (length(unit_values) == 1L) {
     paste0("<b>", series_name, "</b><br>", unit_values[[1]])
   } else {
@@ -203,7 +172,7 @@ series_display_label <- function(series_data) {
 
 medicine_stop_recorded <- function(event_row) {
   if (nrow(event_row) == 0L) return(FALSE)
-  
+
   zero_dose <- !is.na(event_row$Value[[1]]) && event_row$Value[[1]] == 0
   detail <- tolower(event_row$Event_Detail[[1]] %||% "")
   stop_language <- grepl(
@@ -214,27 +183,27 @@ medicine_stop_recorded <- function(event_row) {
     detail,
     perl = TRUE
   )
-  
+
   zero_dose || stop_language
 }
 
 extend_medicine_trace <- function(trace_data, all_trace_events, today = Sys.Date()) {
   if (nrow(trace_data) == 0L || nrow(all_trace_events) == 0L) return(trace_data)
-  
+
   all_trace_events <- all_trace_events |>
     dplyr::arrange(.data$Event_Date)
   latest_record <- all_trace_events[nrow(all_trace_events), , drop = FALSE]
   is_stopped <- medicine_stop_recorded(latest_record)
   endpoint_date <- if (is_stopped) latest_record$Event_Date[[1]] else today
-  
+
   eligible_doses <- trace_data |>
     dplyr::filter(.data$Event_Date <= endpoint_date) |>
     dplyr::arrange(.data$Event_Date)
   if (nrow(eligible_doses) == 0L) return(trace_data)
-  
+
   last_dose <- eligible_doses[nrow(eligible_doses), , drop = FALSE]
   if (endpoint_date <= last_dose$Event_Date[[1]]) return(trace_data)
-  
+
   endpoint <- last_dose
   endpoint$Event_Date <- as.Date(endpoint_date)
   endpoint$Event_Detail <- if (is_stopped) {
@@ -244,25 +213,25 @@ extend_medicine_trace <- function(trace_data, all_trace_events, today = Sys.Date
   }
   endpoint$Hover_Text <- make_hover_text(endpoint)
   endpoint$Is_Display_Endpoint <- TRUE
-  
+
   dplyr::bind_rows(trace_data, endpoint) |>
     dplyr::arrange(.data$Event_Date)
 }
 
 extend_trace_to_today <- function(trace_data, detail_text, today = Sys.Date()) {
   if (nrow(trace_data) == 0L) return(trace_data)
-  
+
   trace_data <- trace_data |>
     dplyr::arrange(.data$Event_Date)
   latest_record <- trace_data[nrow(trace_data), , drop = FALSE]
   if (today <= latest_record$Event_Date[[1]]) return(trace_data)
-  
+
   endpoint <- latest_record
   endpoint$Event_Date <- as.Date(today)
   endpoint$Event_Detail <- detail_text
   endpoint$Hover_Text <- make_hover_text(endpoint)
   endpoint$Is_Display_Endpoint <- TRUE
-  
+
   dplyr::bind_rows(trace_data, endpoint) |>
     dplyr::arrange(.data$Event_Date)
 }
@@ -272,15 +241,15 @@ create_series_plot <- function(series_data, range_start, range_end) {
     dplyr::arrange(.data$Event_Date, .data$Event_Name)
   series_data$Hover_Text <- make_hover_text(series_data)
   series_data$Is_Display_Endpoint <- FALSE
-  
+
   series_name <- series_data$Display_Series[[1]]
   event_type <- series_data$Event_Type[[1]]
   base_colour <- unname(event_colours[[event_type]])
   if (is.null(base_colour) || is.na(base_colour)) base_colour <- nhs_blue
-  
+
   plot <- plotly::plot_ly()
   numeric_events <- !all(is.na(series_data$Value))
-  
+
   if (identical(event_type, "Condition") || !numeric_events) {
     if (identical(event_type, "Condition")) {
       series_data <- extend_trace_to_today(
@@ -288,7 +257,7 @@ create_series_plot <- function(series_data, range_start, range_end) {
         "Active condition: carried forward to today for display."
       )
     }
-    
+
     plot <- plotly::add_trace(
       plot,
       data = series_data,
@@ -319,7 +288,7 @@ create_series_plot <- function(series_data, range_start, range_end) {
   } else {
     event_names <- unique(series_data$Event_Name)
     show_legend <- length(event_names) > 1L
-    
+
     for (index in seq_along(event_names)) {
       event_name <- event_names[[index]]
       all_trace_events <- series_data |>
@@ -327,7 +296,7 @@ create_series_plot <- function(series_data, range_start, range_end) {
       trace_data <- series_data |>
         dplyr::filter(.data$Event_Name == event_name, !is.na(.data$Value))
       if (nrow(trace_data) == 0L) next
-      
+
       if (identical(event_type, "Medicine")) {
         trace_data <- extend_medicine_trace(trace_data, all_trace_events)
       }
@@ -337,14 +306,14 @@ create_series_plot <- function(series_data, range_start, range_end) {
           "Latest recorded result carried forward to today for display."
         )
       }
-      
+
       trace_colour <- if (identical(event_name, "Systolic BP")) {
         "#ED8B00"
       } else {
         base_colour
       }
       line_shape <- if (identical(event_type, "Medicine")) "hv" else "linear"
-      
+
       plot <- plotly::add_trace(
         plot,
         data = trace_data,
@@ -364,7 +333,7 @@ create_series_plot <- function(series_data, range_start, range_end) {
         name = event_name
       )
     }
-    
+
     plot <- plotly::layout(
       plot,
       yaxis = list(
@@ -374,7 +343,7 @@ create_series_plot <- function(series_data, range_start, range_end) {
       )
     )
   }
-  
+
   if (identical(series_name, "Serum LDL (non-HDL)")) {
     plot <- plotly::add_trace(
       plot,
@@ -393,7 +362,7 @@ create_series_plot <- function(series_data, range_start, range_end) {
       inherit = FALSE
     )
   }
-  
+
   plotly::layout(
     plot,
     xaxis = list(
@@ -511,41 +480,6 @@ app_css <- "
     line-height:1.4;
   }
   .dataTables_wrapper { overflow-x:auto; }
-
-  /* Keep clinical-note headers and cells in one full-width table. */
-  #clinical_notes_table table.dataTable {
-    width:100% !important;
-    table-layout:fixed;
-    margin-left:0 !important;
-    margin-right:0 !important;
-  }
-  #clinical_notes_table table.dataTable th,
-  #clinical_notes_table table.dataTable td {
-    text-align:left !important;
-    vertical-align:top;
-    white-space:normal;
-    overflow-wrap:break-word;
-  }
-  #clinical_notes_table table.dataTable th:nth-child(1) {
-    width:120px !important;
-  }
-  #clinical_notes_table table.dataTable th:nth-child(2) {
-    width:240px !important;
-  }
-  #clinical_notes_table table.dataTable td:nth-child(1) {
-    white-space:nowrap;
-  }
-  #clinical_notes_table table.dataTable td:nth-child(3) {
-    white-space:pre-wrap;
-  }
-  @media (max-width:767px) {
-    #clinical_notes_table table.dataTable th:nth-child(1) {
-      width:100px !important;
-    }
-    #clinical_notes_table table.dataTable th:nth-child(2) {
-      width:150px !important;
-    }
-  }
 "
 
 ui <- shiny::navbarPage(
@@ -553,7 +487,7 @@ ui <- shiny::navbarPage(
   id = "main_navigation",
   fluid = TRUE,
   header = shiny::tags$head(shiny::tags$style(shiny::HTML(app_css))),
-  
+
   shiny::tabPanel(
     "Timeline",
     shiny::fluidPage(
@@ -583,7 +517,7 @@ ui <- shiny::navbarPage(
           )
         )
       ),
-      
+
       shiny::fluidRow(
         shiny::column(
           width = 12,
@@ -608,7 +542,7 @@ ui <- shiny::navbarPage(
           )
         )
       ),
-      
+
       shiny::fluidRow(
         shiny::column(
           width = 12,
@@ -620,7 +554,7 @@ ui <- shiny::navbarPage(
           )
         )
       ),
-      
+
       shiny::br(),
       shiny::fluidRow(
         shiny::column(
@@ -643,7 +577,7 @@ ui <- shiny::navbarPage(
       shiny::br()
     )
   ),
-  
+
   shiny::tabPanel(
     "Clinical Notes",
     shiny::fluidPage(
@@ -662,7 +596,7 @@ ui <- shiny::navbarPage(
       DT::DTOutput("clinical_notes_table")
     )
   ),
-  
+
   shiny::tabPanel(
     "User Guidance",
     shiny::fluidPage(
@@ -689,7 +623,7 @@ ui <- shiny::navbarPage(
 
 server <- function(input, output, session) {
   show_event_table <- shiny::reactiveVal(FALSE)
-  
+
   shiny::observeEvent(input$toggle_event_table, {
     new_state <- !show_event_table()
     show_event_table(new_state)
@@ -700,22 +634,22 @@ server <- function(input, output, session) {
       icon = shiny::icon("table")
     )
   })
-  
+
   selected_profile <- shiny::reactive({
     shiny::req(input$patient_id)
     theograph$patient_profile |>
       dplyr::filter(.data$Patient_ID == input$patient_id)
   })
-  
+
   patient_series <- shiny::reactive({
     shiny::req(input$patient_id)
     theograph$series_catalogue |>
       dplyr::filter(.data$Patient_ID == input$patient_id) |>
       dplyr::arrange(.data$Display_Order, .data$Display_Series)
   })
-  
+
   all_series_values <- shiny::reactive(patient_series()$Display_Series)
-  
+
   shiny::observeEvent(input$patient_id, {
     choices <- all_series_values()
     shiny::updateSelectizeInput(
@@ -726,7 +660,7 @@ server <- function(input, output, session) {
       server = TRUE
     )
   }, ignoreInit = FALSE)
-  
+
   shiny::observeEvent(input$select_all_series, {
     choices <- all_series_values()
     shiny::updateSelectizeInput(
@@ -734,22 +668,22 @@ server <- function(input, output, session) {
       server = TRUE
     )
   })
-  
+
   shiny::observeEvent(input$clear_all_series, {
     shiny::updateSelectizeInput(
       session, "series_filter", choices = all_series_values(), selected = character(),
       server = TRUE
     )
   })
-  
+
   selected_timeline_events <- shiny::reactive({
     shiny::req(input$patient_id)
     selected_series <- input$series_filter
-    
+
     if (is.null(selected_series) || length(selected_series) == 0L) {
       return(theograph$timeline_events[0, , drop = FALSE])
     }
-    
+
     theograph$timeline_events |>
       dplyr::filter(
         .data$Patient_ID == input$patient_id,
@@ -759,32 +693,32 @@ server <- function(input, output, session) {
         .data$Display_Order, .data$Event_Date, .data$Event_Name
       )
   })
-  
+
   selected_notes <- shiny::reactive({
     shiny::req(input$patient_id)
     theograph$clinical_notes |>
       dplyr::filter(.data$Patient_ID == input$patient_id) |>
       dplyr::arrange(dplyr::desc(.data$Note_Date))
   })
-  
+
   output$previous_note <- shiny::renderUI({
     previous_note <- selected_notes() |>
       dplyr::filter(.data$Note_Date <= Sys.Date()) |>
       dplyr::slice_head(n = 1)
-    
+
     if (nrow(previous_note) == 0L) {
       return(shiny::tags$p(
-        shiny::tags$strong("Notes from last contact:"), shiny::tags$br(),
-        "No clinical note from a previous contact is available."
+        shiny::tags$strong("Previous notes:"), shiny::tags$br(),
+        "No previous clinical note is available."
       ))
     }
-    
+
     shiny::tags$p(
-      shiny::tags$strong("Notes from last contact:"), shiny::tags$br(),
+      shiny::tags$strong("Previous notes:"), shiny::tags$br(),
       previous_note$Note_Text[[1]]
     )
   })
-  
+
   output$patient_profile <- shiny::renderUI({
     profile <- selected_profile()
     age <- patient_age(profile$Patient_DOB[[1]])
@@ -799,7 +733,7 @@ server <- function(input, output, session) {
       )
     )
   })
-  
+
   output$timeline_count <- shiny::renderUI({
     data <- selected_timeline_events()
     panel_count <- dplyr::n_distinct(data$Display_Series)
@@ -808,17 +742,12 @@ server <- function(input, output, session) {
       paste(panel_count, "visualisations •", nrow(data), "event points")
     )
   })
-  
+
   timeline_height <- shiny::reactive({
     panel_count <- dplyr::n_distinct(selected_timeline_events()$Display_Series)
-    max(
-      300L,
-      timeline_panel_height * panel_count +
-        timeline_panel_gap * max(0L, panel_count - 1L) +
-        timeline_plot_margin$t + timeline_plot_margin$b
-    )
+    max(300L, 105L * panel_count + 55L)
   })
-  
+
   output$timeline_plot_ui <- shiny::renderUI({
     plotly::plotlyOutput(
       "timeline_plot",
@@ -826,42 +755,36 @@ server <- function(input, output, session) {
       width = "100%"
     )
   })
-  
+
   output$timeline_plot <- plotly::renderPlotly({
     data <- selected_timeline_events()
     shiny::validate(
       shiny::need(nrow(data) > 0L, "Select at least one timeline series.")
     )
-    
+
     selected_order <- patient_series() |>
       dplyr::filter(.data$Display_Series %in% unique(data$Display_Series))
     series_names <- selected_order$Display_Series
-    
+
     range_start <- min(data$Event_Date, na.rm = TRUE) - 45
     range_end <- max(c(data$Event_Date, Sys.Date()), na.rm = TRUE) + 45
-    
+
     plots <- lapply(series_names, function(series_name) {
       series_data <- data |>
         dplyr::filter(.data$Display_Series == series_name)
       create_series_plot(series_data, range_start, range_end)
     })
-    
+
     panel_count <- length(series_names)
-    inner_height <- timeline_height() -
-      timeline_plot_margin$t - timeline_plot_margin$b
-    # Each neighbouring panel contributes half of the small vertical gap.
-    panel_margin <- timeline_panel_gap / (2 * inner_height)
-    
     panel_annotations <- lapply(seq_along(series_names), function(index) {
       series_data <- data |>
         dplyr::filter(.data$Display_Series == series_names[[index]])
-      y_axis_reference <- if (index == 1L) "y" else paste0("y", index)
-      
+
       list(
         x = 0,
-        y = 0.5,
+        y = 1 - ((index - 0.5) / panel_count),
         xref = "paper",
-        yref = paste(y_axis_reference, "domain"),
+        yref = "paper",
         text = series_display_label(series_data),
         textangle = 0,
         showarrow = FALSE,
@@ -872,11 +795,11 @@ server <- function(input, output, session) {
         font = list(size = 12, color = "#212B32")
       )
     })
-    
+
     ldl_panel_indices <- which(series_names == "Serum LDL (non-HDL)")
     ldl_reference_annotations <- lapply(ldl_panel_indices, function(index) {
       y_axis_reference <- if (index == 1L) "y" else paste0("y", index)
-      
+
       list(
         x = 1,
         y = 2.6,
@@ -891,7 +814,7 @@ server <- function(input, output, session) {
         font = list(size = 10, color = "rgba(0,94,184,0.95)")
       )
     })
-    
+
     combined <- if (length(plots) == 1L) {
       plots[[1]]
     } else {
@@ -900,31 +823,26 @@ server <- function(input, output, session) {
         nrows = length(plots),
         shareX = TRUE,
         titleY = TRUE,
-        margin = c(0, 0, panel_margin, panel_margin)
+        margin = 0
       )
     }
-    
+
     plotly::layout(
       combined,
       height = timeline_height(),
       autosize = TRUE,
       hovermode = "closest",
-      # A different colour from the white page ensures Plotly creates a
-      # background rectangle for every panel; onRender then alternates them.
-      plot_bgcolor = "#F1F3F5",
       annotations = c(panel_annotations, ldl_reference_annotations),
       legend = list(orientation = "h", x = 0, y = 1.02),
-      margin = timeline_plot_margin
+      margin = list(l = 265, r = 20, t = 20, b = 55)
     ) |>
       plotly::config(
         displaylogo = FALSE,
-        displayModeBar = TRUE,
         responsive = TRUE,
         modeBarButtonsToRemove = c("lasso2d", "select2d")
-      ) |>
-      htmlwidgets::onRender(timeline_background_js)
+      )
   })
-  
+
   output$event_table <- DT::renderDT({
     data <- selected_timeline_events() |>
       dplyr::select(
@@ -932,7 +850,7 @@ server <- function(input, output, session) {
         .data$Linked_Condition, .data$Display_Series, .data$Value,
         .data$Units, .data$Event_Detail
       )
-    
+
     DT::datatable(
       data,
       colnames = gsub("_", " ", names(data), fixed = TRUE),
@@ -942,16 +860,16 @@ server <- function(input, output, session) {
     ) |>
       DT::formatDate("Event_Date", method = "toLocaleDateString")
   })
-  
+
   output$event_table_panel <- shiny::renderUI({
     if (!show_event_table()) return(NULL)
-    
+
     shiny::tagList(
       shiny::br(),
       DT::DTOutput("event_table")
     )
   })
-  
+
   output$note_year_filter <- shiny::renderUI({
     notes <- selected_notes()
     years <- sort(unique(format(notes$Note_Date, "%Y")), decreasing = TRUE)
@@ -959,12 +877,12 @@ server <- function(input, output, session) {
       "note_year", "Year", choices = c("All years" = "", years), selected = ""
     )
   })
-  
+
   filtered_notes <- shiny::reactive({
     notes <- selected_notes()
     query <- trimws(input$notes_search %||% "")
     selected_year <- input$note_year %||% ""
-    
+
     if (nzchar(query)) {
       notes <- notes |>
         dplyr::filter(grepl(tolower(query), tolower(.data$Note_Text), fixed = TRUE))
@@ -975,7 +893,7 @@ server <- function(input, output, session) {
     }
     notes
   })
-  
+
   output$clinical_notes_table <- DT::renderDT({
     notes <- filtered_notes() |>
       dplyr::select(.data$Note_Date, .data$Note_Type, .data$Note_Text)
@@ -984,16 +902,11 @@ server <- function(input, output, session) {
       colnames = gsub("_", " ", names(notes), fixed = TRUE),
       rownames = FALSE,
       escape = TRUE,
-      width = "100%",
-      options = list(
-        # Keep the header and body together; CSS sets widths and wraps notes.
-        pageLength = 10, scrollX = FALSE, autoWidth = FALSE,
-        searching = FALSE
-      )
+      options = list(pageLength = 10, scrollX = TRUE, autoWidth = TRUE)
     ) |>
       DT::formatDate("Note_Date", method = "toLocaleDateString")
   })
-  
+
   output$download_patient_data <- shiny::downloadHandler(
     filename = function() {
       paste0("Theograph_", input$patient_id, "_", Sys.Date(), ".xlsx")
