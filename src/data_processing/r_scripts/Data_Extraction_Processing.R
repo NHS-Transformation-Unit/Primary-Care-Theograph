@@ -1,554 +1,384 @@
-# script for processing raw CIPHA DynAirX data into workable format
 
-library(dplyr)
-library(stringr)
-library(here)
-library(readr)
-library(readxl)
-library(openxlsx)
+# Theograph synthetic data preparation
 
-# helper functions
+required_packages <- c("dplyr", "here", "readxl", "tibble")
+missing_packages <- required_packages[
+  !vapply(required_packages, requireNamespace, logical(1), quietly = TRUE)
+]
 
-extract_strength_mg <- function(x) {
-  out <- str_match(x, "([0-9]+(\\.[0-9]+)?)\\s*mg")[, 2]
-  suppressWarnings(as.numeric(out))
-}
-
-is_bp_term <- function(x) {
-  x_low <- str_to_lower(x)
-  str_detect(x_low, "blood pressure") & str_detect(x_low, "systolic|diastolic")
-}
-
-is_metformin_term <- function(x) {
-  x_chr <- as.character(x)
-  x_low <- str_to_lower(x_chr)
-  ok <- !is.na(x_chr) & x_chr != ""
-  ok & (str_detect(x_low, "\\bmetformin\\b") | str_detect(x_low, "\\bglucophage\\b"))
-}
-
-random_metformin_strength_mg <- function(n = 1L) {
-  
-  sample(c(500, 850, 1000), size = n, replace = TRUE, prob = c(0.70, 0.15, 0.15))
-}
-
-random_sertraline_strength_mg <- function(n = 1L) {
-  
-  sample(c(50, 100), size = n, replace = TRUE, prob = c(0.75, 0.25))
-}
-
-# creating synthetic event rows matching the processed schema
-
-make_synth_rows <- function(patient_name,
-                            patient_dob,
-                            sex,
-                            patient_gender,
-                            dates,
-                            record_category,
-                            event_term,
-                            value,
-                            units,
-                            event_category = "SYNTHETIC",
-                            prescription_instruction = NA_character_) {
-  tibble(
-    Patient_Name = rep(patient_name, length(dates)),
-    Patient_DOB = rep(patient_dob, length(dates)),
-    Sex = rep(sex, length(dates)),
-    Patient_Gender = rep(patient_gender, length(dates)),
-    Contact_Event_Date = dates,
-    Prescription_Instruction = rep(prescription_instruction, length(dates)),
-    Value = value,
-    Units = units,
-    Contact_Event_Category = rep(event_category, length(dates)),
-    Contact_Record_Category = rep(record_category, length(dates)),
-    Contact_Event_Term = rep(event_term, length(dates))
+if (length(missing_packages) > 0L) {
+  stop(
+    "Install the following packages before processing Theograph data: ",
+    paste(missing_packages, collapse = ", "),
+    call. = FALSE
   )
 }
 
-# loading raw data
+find_current_source_file <- function() {
+  source_files <- vapply(
+    sys.frames(),
+    function(frame) {
+      if (is.null(frame$ofile)) NA_character_ else as.character(frame$ofile)
+    },
+    character(1)
+  )
+  source_files <- source_files[!is.na(source_files) & nzchar(source_files)]
+  if (length(source_files) == 0L) return(NA_character_)
+  normalizePath(source_files[[length(source_files)]], winslash = "/", mustWork = FALSE)
+}
 
-Raw_Extr_df <- read.csv(here("data", "raw_extracts", "Raw_Patient_Extract.csv"), header = TRUE)
+configured_project_root <- Sys.getenv("THEOGRAPH_PROJECT_ROOT", unset = "")
+processing_source_file <- find_current_source_file()
 
-# defining terms to include
+if (nzchar(configured_project_root)) {
+  Theograph_Project_Root <- normalizePath(
+    configured_project_root, winslash = "/", mustWork = FALSE
+  )
+} else if (!is.na(processing_source_file)) {
+  Theograph_Project_Root <- normalizePath(
+    file.path(dirname(processing_source_file), "..", ".."),
+    winslash = "/",
+    mustWork = FALSE
+  )
+} else {
+  Theograph_Project_Root <- normalizePath(
+    here::here(), winslash = "/", mustWork = FALSE
+  )
+}
 
-# assays
+`%||%` <- function(x, fallback) {
+  if (is.null(x) || length(x) == 0L || is.na(x[[1]]) || !nzchar(x[[1]])) {
+    fallback
+  } else {
+    x
+  }
+}
 
-assay_terms <- c(
-  "Lying diastolic blood pressure (observable entity)",
-  "Lying systolic blood pressure (observable entity)",
-  "Serum low density lipoprotein cholesterol level (observable entity)",
-  "Haemoglobin A1c level - International Federation of Clinical Chemistry and Laboratory Medicine standardised (observable entity)"
-)
+resolve_theograph_input <- function() {
+  configured_path <- Sys.getenv("THEOGRAPH_DATA_PATH", unset = "")
 
-# diagnoses
+  data_directories <- unique(c(
+    file.path(Theograph_Project_Root, "data", "raw_extracts"),
+    file.path(Theograph_Project_Root, "data", "processed_extracts"),
+    here::here("data", "raw_extracts"),
+    here::here("data", "processed_extracts")
+  ))
+  exact_candidates <- file.path(
+    data_directories, "Theograph_Synthetic_Patient_Dataset.xlsx"
+  )
+  versioned_candidates <- unlist(lapply(
+    data_directories,
+    list.files,
+    pattern = "^Theograph_Synthetic_Patient_Dataset( ?\\([0-9]+\\))?\\.xlsx$",
+    full.names = TRUE
+  ), use.names = FALSE)
 
-diagnosis_terms <- c(
-  "Essential hypertension (disorder)",
-  "Diabetes mellitus type 2 (disorder)",
-  "Mixed anxiety and depressive disorder (disorder)",
-  "Depressive disorder NEC (disorder)",
-  "Depressive disorder (disorder)",
-  "Hypercholesterolaemia (disorder)",
-  "Hyperlipidaemia (disorder)",
-  "Disorder of lipid metabolism (disorder)",
-  "Lipid metabolism disorder (disorder)"
-)
+  candidates <- unique(c(
+    configured_path,
+    exact_candidates,
+    versioned_candidates
+  ))
+  candidates <- candidates[nzchar(candidates)]
+  existing <- candidates[file.exists(candidates)]
 
-# prescriptions
-
-lipid_drug_terms <- c(
-  "Atorvastatin 10mg tablets",
-  "Atorvastatin 20mg tablets",
-  "Atorvastatin 40mg tablets",
-  "Atorvastatin 60mg tablets",
-  "Atorvastatin 80mg tablets"
-)
-
-htn_drug_terms <- c(
-  "Amlodipine 2.5mg tablets",
-  "Amlodipine 5mg tablets",
-  "Amlodipine 10mg tablets"
-)
-
-dm_drug_terms <- c(
-  "Metformin 500mg tablets",
-  "Metformin 850mg tablets",
-  "Metformin 1g tablets",
-  "Metformin 500mg modified-release tablets",
-  "Metformin 750mg modified-release tablets",
-  "Metformin 1g modified-release tablets"
-)
-
-mdd_drug_terms <- c(
-  "Sertraline 50mg tablets",
-  "Sertraline 100mg tablets",
-  "Sertraline 50mg capsules",
-  "Sertraline 100mg capsules"
-)
-
-all_allowed_terms <- c(assay_terms, diagnosis_terms, lipid_drug_terms, htn_drug_terms, dm_drug_terms, mdd_drug_terms)
-
-# filtering and standardisation
-
-Raw_Extr_df_Filter <- Raw_Extr_df %>%
-  mutate(
-    is_metformin = is_metformin_term(term),
-    is_bp = is_bp_term(term)
-  ) %>%
-  filter(term %in% all_allowed_terms | is_bp | is_metformin) %>%
-  mutate(
-    Contact_Record_Category = case_when(
-      term %in% assay_terms ~ "Biomedical Assay",
-      is_bp ~ "Biomedical Assay",
-      term %in% diagnosis_terms ~ "Diagnosis/Review",
-      term %in% c(lipid_drug_terms, htn_drug_terms, dm_drug_terms, mdd_drug_terms) | is_metformin ~ "Medication",
-      TRUE ~ "NotKnown"
-    ),
-    
-# units
-    
-    units = case_when(
-      term %in% c(lipid_drug_terms, htn_drug_terms, dm_drug_terms, mdd_drug_terms) | is_metformin ~ "mg",
-      term == "Haemoglobin A1c level - International Federation of Clinical Chemistry and Laboratory Medicine standardised (observable entity)" ~ "mmol/mol",
-      is_bp ~ if_else(is.na(units) | units == "", "mmHg", units),
-      TRUE ~ units
-    ),
-    
-# values
-    
-    value = case_when(
-      term %in% c(lipid_drug_terms, htn_drug_terms, dm_drug_terms, mdd_drug_terms) | is_metformin ~ extract_strength_mg(term),
-      TRUE ~ suppressWarnings(as.numeric(value))
-    ),
-    
-    value = if_else(is_metformin & is.na(value), random_metformin_strength_mg(dplyr::n()), value),
-    
-# harmonising labels
-    
-    Contact_Event_Term = case_when(
-      term == "Lying diastolic blood pressure (observable entity)" ~ "Diastolic BP",
-      term == "Lying systolic blood pressure (observable entity)" ~ "Systolic BP",
-      term == "Serum low density lipoprotein cholesterol level (observable entity)" ~ "Serum LDL (non-HDL)",
-      term == "Haemoglobin A1c level - International Federation of Clinical Chemistry and Laboratory Medicine standardised (observable entity)" ~ "HbA1c",
-      
-      term == "Essential hypertension (disorder)" ~ "Hypertension",
-      term == "Diabetes mellitus type 2 (disorder)" ~ "Type 2 diabetes",
-      term %in% c("Mixed anxiety and depressive disorder (disorder)",
-                  "Depressive disorder NEC (disorder)",
-                  "Depressive disorder (disorder)") ~ "Depression",
-      term %in% c("Hypercholesterolaemia (disorder)",
-                  "Hyperlipidaemia (disorder)",
-                  "Disorder of lipid metabolism (disorder)",
-                  "Lipid metabolism disorder (disorder)") ~ "Lipid disorder",
-      
-      term %in% lipid_drug_terms ~ "Atorvastatin",
-      term %in% htn_drug_terms ~ "Amlodipine",
-      term %in% dm_drug_terms | is_metformin ~ "Metformin",
-      term %in% mdd_drug_terms ~ "Sertraline",
-      
-      is_bp & str_detect(str_to_lower(term), "systolic") ~ "Systolic BP",
-      is_bp & str_detect(str_to_lower(term), "diastolic") ~ "Diastolic BP",
-      
-      TRUE ~ term
+  if (length(existing) == 0L) {
+    stop(
+      paste0(
+        "The Theograph workbook could not be found. Put it at ",
+        "data/raw_extracts/Theograph_Synthetic_Patient_Dataset.xlsx ",
+        "or set THEOGRAPH_DATA_PATH."
+      ),
+      call. = FALSE
     )
-  ) %>%
-  
-# same patient mapping
-  
-  mutate(Patient_Name = case_when(
-    PK_Patient_ID == "610673" ~ "Olivia Davies",
-    PK_Patient_ID == "1684031" ~ "Thomas Williams",
-    PK_Patient_ID == "714765" ~ "Leah O'Sullivan",
-    PK_Patient_ID == "5329931" ~ "Emily Johnson",
-    PK_Patient_ID == "2337077" ~ "Debelah Oluwaseyi",
-    PK_Patient_ID == "2813256" ~ "Maya Ahmed",
-    PK_Patient_ID == "5162922" ~ "Jack Murphy",
-    PK_Patient_ID == "3055848" ~ "Zara Singh",
-    PK_Patient_ID == "5182896" ~ "Georgina Taylor",
-    PK_Patient_ID == "2839091" ~ "Leila Hassan",
-    PK_Patient_ID == "2701908" ~ "William Edwards",
-    PK_Patient_ID == "2752409" ~ "Danielle Roberts",
-    PK_Patient_ID == "4822061" ~ "Rhea Desai",
-    PK_Patient_ID == "5330850" ~ "Harriet Evans",
-    PK_Patient_ID == "3359779" ~ "Amara Nwachukwu",
-    PK_Patient_ID == "1920086" ~ "Isla Campbell",
-    PK_Patient_ID == "3293167" ~ "Saesha Sharma",
-    TRUE ~ "NotKnown"
-  )) %>%
-  filter(Patient_Name %in% c(
-    "Olivia Davies",
-    "Thomas Williams",
-    "Emily Johnson",
-    "Debelah Oluwaseyi",
-    "Jack Murphy",
-    "Zara Singh",
-    "Georgina Taylor",
-    "Rhea Desai",
-    "Harriet Evans",
-    "Amara Nwachukwu",
-    "Isla Campbell",
-    "Saesha Sharma"
-  )) %>%
-  mutate(Patient_Gender = case_when(
-    Sex == "M" ~ "Male",
-    Sex == "F" ~ "Female",
-    TRUE ~ "NotKnown"
-  )) %>%
-  rename(
-    Patient_DOB = Dob,
-    Contact_Event_Date = date,
-    Prescription_Instruction = Episodicity,
-    Value = value,
-    Units = units,
-    Contact_Event_Category = eventtype
-  ) %>%
-  select(
-    Patient_Name,
-    Patient_DOB,
-    Sex,
-    Patient_Gender,
-    Contact_Event_Date,
-    Contact_Record_Category,
-    Contact_Event_Term,
-    Value,
-    Units,
-    Prescription_Instruction,
-    Contact_Event_Category
-  )
-
-set.seed(42)
-
-get_patient_demographics <- function(df, patient_name) {
-  d <- df %>% filter(Patient_Name == patient_name) %>% slice(1)
-  if (nrow(d) == 0) {
-    return(list(Patient_DOB = "1985-01-01", Sex = "F", Patient_Gender = "Female"))
   }
-  list(
-    Patient_DOB = as.character(d$Patient_DOB[1]),
-    Sex = as.character(d$Sex[1]),
-    Patient_Gender = as.character(d$Patient_Gender[1])
-  )
+
+  normalizePath(existing[[1]], winslash = "/", mustWork = TRUE)
 }
 
-choose_dates_from_patient <- function(df, patient_name, n = 6L) {
-  dts <- df %>% filter(Patient_Name == patient_name) %>% pull(Contact_Event_Date) %>% unique()
-  dts <- dts[!is.na(dts)]
-  if (length(dts) == 0) {
-    
-    return(format(seq.Date(as.Date("2024-01-01"), by = "month", length.out = n), "%d/%m/%Y"))
+as_theograph_date <- function(x, field_name) {
+  if (inherits(x, "Date")) {
+    return(x)
   }
-  
-  dts <- sort(dts)
-  if (length(dts) >= n) return(sample(dts, n, replace = FALSE))
-  rep(dts, length.out = n)
+
+  if (inherits(x, "POSIXt")) {
+    return(as.Date(x))
+  }
+
+  if (is.numeric(x)) {
+    return(as.Date(x, origin = "1899-12-30"))
+  }
+
+  parsed <- suppressWarnings(as.Date(as.character(x)))
+  if (any(is.na(parsed) & !is.na(x))) {
+    stop("Could not parse every value in ", field_name, " as a date.", call. = FALSE)
+  }
+  parsed
 }
 
-inject_med_if_missing <- function(df, patient_name, required_diag, med_term, dose_sampler, units = "mg") {
-  has_diag <- df %>% filter(Patient_Name == patient_name, Contact_Record_Category == "Diagnosis/Review", Contact_Event_Term == required_diag) %>% nrow() > 0
-  has_med <- df %>% filter(Patient_Name == patient_name, Contact_Record_Category == "Medication", Contact_Event_Term == med_term) %>% nrow() > 0
-  
-  if (has_diag && !has_med) {
-    demo <- get_patient_demographics(df, patient_name)
-    dates <- choose_dates_from_patient(df, patient_name, n = 6L)
-    synth <- make_synth_rows(
-      patient_name = patient_name,
-      patient_dob = demo$Patient_DOB,
-      sex = demo$Sex,
-      patient_gender = demo$Patient_Gender,
-      dates = dates,
-      record_category = "Medication",
-      event_term = med_term,
-      value = dose_sampler(length(dates)),
-      units = rep(units, length(dates)),
-      event_category = "SYNTHETIC"
+normalise_text <- function(x) {
+  out <- trimws(as.character(x))
+  out[is.na(x)] <- NA_character_
+  out
+}
+
+assert_columns <- function(data, expected, sheet_name) {
+  missing <- setdiff(expected, names(data))
+  extra <- setdiff(names(data), expected)
+
+  if (length(missing) > 0L || length(extra) > 0L) {
+    details <- c(
+      if (length(missing) > 0L) paste("missing:", paste(missing, collapse = ", ")),
+      if (length(extra) > 0L) paste("unexpected:", paste(extra, collapse = ", "))
     )
-    return(bind_rows(df, synth))
+    stop(
+      "The ", sheet_name, " sheet does not match the minimum schema (",
+      paste(details, collapse = "; "), ").",
+      call. = FALSE
+    )
   }
-  df
+
+  invisible(TRUE)
 }
 
-Raw_Extr_df_Filter <- Raw_Extr_df_Filter %>%
-  inject_med_if_missing(
-    patient_name = "Thomas Williams",
-    required_diag = "Type 2 diabetes",
-    med_term = "Metformin",
-    dose_sampler = random_metformin_strength_mg,
-    units = "mg"
-  ) %>%
-  inject_med_if_missing(
-    patient_name = "Saesha Sharma",
-    required_diag = "Type 2 diabetes",
-    med_term = "Metformin",
-    dose_sampler = random_metformin_strength_mg,
-    units = "mg"
-  )
-
-Raw_Extr_df_Filter <- Raw_Extr_df_Filter %>%
-  inject_med_if_missing(
-    patient_name = "Olivia Davies",
-    required_diag = "Depression",
-    med_term = "Sertraline",
-    dose_sampler = random_sertraline_strength_mg,
-    units = "mg"
-  )
-
-rhea_has_any_diag <- Raw_Extr_df_Filter %>% filter(Patient_Name == "Rhea Desai", Contact_Record_Category == "Diagnosis/Review") %>% nrow() > 0
-rhea_has_any_med  <- Raw_Extr_df_Filter %>% filter(Patient_Name == "Rhea Desai", Contact_Record_Category == "Medication") %>% nrow() > 0
-
-if (!rhea_has_any_diag && !rhea_has_any_med) {
-  
-  rhea_demo <- get_patient_demographics(Raw_Extr_df_Filter, "Rhea Desai")
-  dates <- choose_dates_from_patient(Raw_Extr_df_Filter, "Rhea Desai", n = 6L)
-  
-  domain <- sample(c("t2dm", "depr", "lipids", "htn"), size = 1, prob = c(0.35, 0.30, 0.20, 0.15))
-  
-  synth_rows <- list()
-  
-  if (domain == "t2dm") {
-    synth_rows[[length(synth_rows) + 1]] <- make_synth_rows("Rhea Desai", rhea_demo$Patient_DOB, rhea_demo$Sex, rhea_demo$Patient_Gender,
-                                                            dates = dates[1], record_category = "Diagnosis/Review", event_term = "Type 2 diabetes",
-                                                            value = NA_real_, units = NA_character_)
-    synth_rows[[length(synth_rows) + 1]] <- make_synth_rows("Rhea Desai", rhea_demo$Patient_DOB, rhea_demo$Sex, rhea_demo$Patient_Gender,
-                                                            dates = dates, record_category = "Medication", event_term = "Metformin",
-                                                            value = random_metformin_strength_mg(length(dates)), units = rep("mg", length(dates)))
-    
-    hba1c_vals <- round(runif(length(dates), min = 45, max = 95))
-    synth_rows[[length(synth_rows) + 1]] <- make_synth_rows("Rhea Desai", rhea_demo$Patient_DOB, rhea_demo$Sex, rhea_demo$Patient_Gender,
-                                                            dates = dates, record_category = "Biomedical Assay", event_term = "HbA1c",
-                                                            value = hba1c_vals, units = rep("mmol/mol", length(dates)))
+assert_required_values <- function(data, fields, sheet_name) {
+  for (field in fields) {
+    field_values <- data[[field]]
+    missing <- is.na(field_values)
+    if (is.character(field_values)) {
+      missing <- missing | !nzchar(trimws(field_values))
+    }
+    if (any(missing)) {
+      stop(
+        "The ", sheet_name, " sheet has blank values in required field ",
+        field, ".",
+        call. = FALSE
+      )
+    }
   }
-  
-  if (domain == "depr") {
-    synth_rows[[length(synth_rows) + 1]] <- make_synth_rows("Rhea Desai", rhea_demo$Patient_DOB, rhea_demo$Sex, rhea_demo$Patient_Gender,
-                                                            dates = dates[1], record_category = "Diagnosis/Review", event_term = "Depression",
-                                                            value = NA_real_, units = NA_character_)
-    synth_rows[[length(synth_rows) + 1]] <- make_synth_rows("Rhea Desai", rhea_demo$Patient_DOB, rhea_demo$Sex, rhea_demo$Patient_Gender,
-                                                            dates = dates, record_category = "Medication", event_term = "Sertraline",
-                                                            value = random_sertraline_strength_mg(length(dates)), units = rep("mg", length(dates)))
-  }
-  
-  if (domain == "lipids") {
-    synth_rows[[length(synth_rows) + 1]] <- make_synth_rows("Rhea Desai", rhea_demo$Patient_DOB, rhea_demo$Sex, rhea_demo$Patient_Gender,
-                                                            dates = dates[1], record_category = "Diagnosis/Review", event_term = "Lipid disorder",
-                                                            value = NA_real_, units = NA_character_)
-    synth_rows[[length(synth_rows) + 1]] <- make_synth_rows("Rhea Desai", rhea_demo$Patient_DOB, rhea_demo$Sex, rhea_demo$Patient_Gender,
-                                                            dates = dates, record_category = "Medication", event_term = "Atorvastatin",
-                                                            value = sample(c(10, 20, 40, 80), size = length(dates), replace = TRUE, prob = c(0.25, 0.35, 0.30, 0.10)),
-                                                            units = rep("mg", length(dates)))
-    ldl_vals <- round(runif(length(dates), min = 2.0, max = 4.8), 1)
-    synth_rows[[length(synth_rows) + 1]] <- make_synth_rows("Rhea Desai", rhea_demo$Patient_DOB, rhea_demo$Sex, rhea_demo$Patient_Gender,
-                                                            dates = dates, record_category = "Biomedical Assay", event_term = "Serum LDL (non-HDL)",
-                                                            value = ldl_vals, units = rep("mmol/L", length(dates)))
-  }
-  
-  if (domain == "htn") {
-    synth_rows[[length(synth_rows) + 1]] <- make_synth_rows("Rhea Desai", rhea_demo$Patient_DOB, rhea_demo$Sex, rhea_demo$Patient_Gender,
-                                                            dates = dates[1], record_category = "Diagnosis/Review", event_term = "Hypertension",
-                                                            value = NA_real_, units = NA_character_)
-    synth_rows[[length(synth_rows) + 1]] <- make_synth_rows("Rhea Desai", rhea_demo$Patient_DOB, rhea_demo$Sex, rhea_demo$Patient_Gender,
-                                                            dates = dates, record_category = "Medication", event_term = "Amlodipine",
-                                                            value = sample(c(2.5, 5, 10), size = length(dates), replace = TRUE, prob = c(0.20, 0.60, 0.20)),
-                                                            units = rep("mg", length(dates)))
-    sys <- round(runif(length(dates), min = 130, max = 170))
-    dia <- round(runif(length(dates), min = 80, max = 105))
-    synth_rows[[length(synth_rows) + 1]] <- make_synth_rows("Rhea Desai", rhea_demo$Patient_DOB, rhea_demo$Sex, rhea_demo$Patient_Gender,
-                                                            dates = dates, record_category = "Biomedical Assay", event_term = "Systolic BP",
-                                                            value = sys, units = rep("mmHg", length(dates)))
-    synth_rows[[length(synth_rows) + 1]] <- make_synth_rows("Rhea Desai", rhea_demo$Patient_DOB, rhea_demo$Sex, rhea_demo$Patient_Gender,
-                                                            dates = dates, record_category = "Biomedical Assay", event_term = "Diastolic BP",
-                                                            value = dia, units = rep("mmHg", length(dates)))
-  }
-  
-  Raw_Extr_df_Filter <- bind_rows(Raw_Extr_df_Filter, bind_rows(synth_rows))
+  invisible(TRUE)
 }
 
-# final clean-up after injection
-
-Raw_Extr_df_Filter <- Raw_Extr_df_Filter %>%
-  mutate(
-    Value = suppressWarnings(as.numeric(Value)),
-    Value = if_else(Contact_Record_Category == "Medication" & is.na(Value), 1, Value),
-    Units = if_else(Contact_Record_Category == "Medication" & (is.na(Units) | Units == ""), "mg", Units)
+validate_theograph_data <- function(patient_profile, events, clinical_notes) {
+  assert_required_values(
+    patient_profile,
+    c(
+      "Patient_ID", "Patient_Name", "Patient_DOB", "Patient_Gender",
+      "Height_m", "Weight_kg", "Profile_Focus", "BMI"
+    ),
+    "Patient Profile"
+  )
+  assert_required_values(
+    events,
+    c(
+      "Patient_ID", "Event_Date", "Event_Type", "Event_Name",
+      "Linked_Condition", "Display_Series", "Event_Detail",
+      "Display_Order", "Show_On_Timeline"
+    ),
+    "Events"
+  )
+  assert_required_values(
+    clinical_notes,
+    c("Patient_ID", "Note_Date", "Note_Type", "Note_Text"),
+    "Clinical Notes"
   )
 
-# converting to wide format
+  if (anyDuplicated(patient_profile$Patient_ID)) {
+    stop("Patient_ID must be unique in Patient Profile.", call. = FALSE)
+  }
 
-Pt_Proc_Long <- Raw_Extr_df_Filter
+  known_ids <- patient_profile$Patient_ID
+  orphan_events <- setdiff(unique(events$Patient_ID), known_ids)
+  orphan_notes <- setdiff(unique(clinical_notes$Patient_ID), known_ids)
+  if (length(orphan_events) > 0L || length(orphan_notes) > 0L) {
+    stop("Every event and clinical note must join to Patient Profile.", call. = FALSE)
+  }
 
-# enforcing clinical coherence between diagnoses and prescriptions
+  allowed_types <- c("Condition", "Biomarker", "Medicine")
+  unknown_types <- setdiff(unique(events$Event_Type), allowed_types)
+  if (length(unknown_types) > 0L) {
+    stop(
+      "Unsupported Event_Type values: ", paste(unknown_types, collapse = ", "),
+      call. = FALSE
+    )
+  }
 
-diag_domains <- Pt_Proc_Long %>%
-  filter(Contact_Record_Category == "Diagnosis/Review") %>%
-  mutate(domain = case_when(
-    Contact_Event_Term == "Lipid disorder"   ~ "lipids",
-    Contact_Event_Term == "Hypertension"    ~ "htn",
-    Contact_Event_Term == "Type 2 diabetes" ~ "t2dm",
-    Contact_Event_Term == "Depression"      ~ "depr",
-    TRUE ~ NA_character_
-  )) %>%
-  filter(!is.na(domain)) %>%
-  distinct(Patient_Name, domain)
+  allowed_flags <- c("Yes", "No")
+  unknown_flags <- setdiff(unique(events$Show_On_Timeline), allowed_flags)
+  if (length(unknown_flags) > 0L) {
+    stop("Show_On_Timeline must contain only Yes or No.", call. = FALSE)
+  }
 
-med_rows <- Pt_Proc_Long %>%
-  filter(Contact_Record_Category == "Medication") %>%
-  mutate(domain = case_when(
-    Contact_Event_Term == "Atorvastatin" ~ "lipids",
-    Contact_Event_Term == "Amlodipine"   ~ "htn",
-    Contact_Event_Term == "Metformin"    ~ "t2dm",
-    Contact_Event_Term == "Sertraline"   ~ "depr",
-    TRUE ~ NA_character_
-  )) %>%
-  filter(!is.na(domain)) %>%
-  semi_join(diag_domains, by = c("Patient_Name", "domain")) %>%
-  select(-domain)
+  value_without_units <- !is.na(events$Value) &
+    (is.na(events$Units) | !nzchar(events$Units))
+  if (any(value_without_units)) {
+    stop("Every non-missing event Value must have Units.", call. = FALSE)
+  }
 
-non_med_rows <- Pt_Proc_Long %>%
-  filter(Contact_Record_Category != "Medication")
+  qrisk_patients <- events |>
+    dplyr::filter(grepl("QRisk2", .data$Event_Name, ignore.case = TRUE)) |>
+    dplyr::distinct(.data$Patient_ID) |>
+    dplyr::pull(.data$Patient_ID)
+  if (length(setdiff(known_ids, qrisk_patients)) > 0L) {
+    stop("Every patient must have at least one QRisk2 event.", call. = FALSE)
+  }
 
-# looking for duplicated values on same date
+  invalid_qrisk <- events |>
+    dplyr::filter(
+      grepl("QRisk2", .data$Event_Name, ignore.case = TRUE),
+      .data$Event_Type != "Biomarker" | .data$Show_On_Timeline != "Yes"
+    )
+  if (nrow(invalid_qrisk) > 0L) {
+    stop(
+      "Every QRisk2 event must be a Biomarker with Show_On_Timeline set to Yes.",
+      call. = FALSE
+    )
+  }
 
-Pt_Proc_Long <- bind_rows(non_med_rows, med_rows)
+  invisible(TRUE)
+}
 
-assay_rows <- Pt_Proc_Long %>%
-  filter(Contact_Record_Category == "Biomedical Assay") %>%
-  mutate(Value = suppressWarnings(as.numeric(Value))) %>%
-  group_by(Patient_Name, Contact_Event_Date, Contact_Event_Term) %>%
-  summarise(
-    Patient_DOB = dplyr::first(Patient_DOB),
-    Sex = dplyr::first(Sex),
-    Patient_Gender = dplyr::first(Patient_Gender),
-    Contact_Record_Category = dplyr::first(Contact_Record_Category),
-    Units = dplyr::first(Units),
-    Prescription_Instruction = dplyr::first(Prescription_Instruction),
-    Contact_Event_Category = dplyr::first(Contact_Event_Category),
-    Value = if (all(is.na(Value))) NA_real_ else mean(Value, na.rm = TRUE),
-    .groups = "drop"
+process_theograph_data <- function(input_path = resolve_theograph_input()) {
+  expected_sheets <- c(
+    "Patient Profile", "Events", "Clinical Notes", "Data Dictionary"
+  )
+  available_sheets <- readxl::excel_sheets(input_path)
+
+  if (!setequal(expected_sheets, available_sheets)) {
+    stop(
+      "The source workbook must contain exactly these sheets: ",
+      paste(expected_sheets, collapse = ", "),
+      call. = FALSE
+    )
+  }
+
+  patient_profile <- readxl::read_excel(input_path, sheet = "Patient Profile")
+  events <- readxl::read_excel(input_path, sheet = "Events")
+  clinical_notes <- readxl::read_excel(input_path, sheet = "Clinical Notes")
+  data_dictionary <- readxl::read_excel(input_path, sheet = "Data Dictionary")
+
+  assert_columns(
+    patient_profile,
+    c(
+      "Patient_ID", "Patient_Name", "Patient_DOB", "Patient_Gender",
+      "Height_m", "Weight_kg", "Profile_Focus", "BMI"
+    ),
+    "Patient Profile"
+  )
+  assert_columns(
+    events,
+    c(
+      "Patient_ID", "Event_Date", "Event_Type", "Event_Name",
+      "Linked_Condition", "Display_Series", "Value", "Units",
+      "Event_Detail", "Display_Order", "Show_On_Timeline"
+    ),
+    "Events"
+  )
+  assert_columns(
+    clinical_notes,
+    c("Patient_ID", "Note_Date", "Note_Type", "Note_Text"),
+    "Clinical Notes"
+  )
+  assert_columns(
+    data_dictionary,
+    c("Sheet", "Field", "Data_Type", "Required", "Description"),
+    "Data Dictionary"
   )
 
-non_assay_rows <- Pt_Proc_Long %>%
-  filter(Contact_Record_Category != "Biomedical Assay")
+  patient_profile <- patient_profile |>
+    dplyr::mutate(
+      dplyr::across(dplyr::where(is.character), normalise_text),
+      Patient_DOB = as_theograph_date(.data$Patient_DOB, "Patient_DOB"),
+      Height_m = as.numeric(.data$Height_m),
+      Weight_kg = as.numeric(.data$Weight_kg),
+      BMI = round(.data$Weight_kg / (.data$Height_m^2), 1)
+    ) |>
+    dplyr::arrange(.data$Patient_ID)
 
-Pt_Proc_Long <- bind_rows(non_assay_rows, assay_rows)
+  events <- events |>
+    dplyr::mutate(
+      dplyr::across(dplyr::where(is.character), normalise_text),
+      Event_Date = as_theograph_date(.data$Event_Date, "Event_Date"),
+      Value = suppressWarnings(as.numeric(.data$Value)),
+      Display_Order = as.integer(.data$Display_Order),
+      Show_On_Timeline = ifelse(
+        tolower(.data$Show_On_Timeline) == "yes", "Yes", "No"
+      )
+    ) |>
+    dplyr::arrange(
+      .data$Patient_ID, .data$Display_Order, .data$Event_Date,
+      .data$Event_Type, .data$Event_Name
+    )
 
-bp_complete_patients <- Pt_Proc_Long %>%
-  filter(Contact_Record_Category == "Biomedical Assay",
-         Contact_Event_Term %in% c("Systolic BP", "Diastolic BP")) %>%
-  group_by(Patient_Name) %>%
-  summarise(
-    has_systolic = any(Contact_Event_Term == "Systolic BP"),
-    has_diastolic = any(Contact_Event_Term == "Diastolic BP"),
-    .groups = "drop"
-  ) %>%
-  filter(has_systolic & has_diastolic) %>%
-  pull(Patient_Name)
+  clinical_notes <- clinical_notes |>
+    dplyr::mutate(
+      dplyr::across(dplyr::where(is.character), normalise_text),
+      Note_Date = as_theograph_date(.data$Note_Date, "Note_Date")
+    ) |>
+    dplyr::arrange(.data$Patient_ID, dplyr::desc(.data$Note_Date))
 
-Pt_Proc_Long <- Pt_Proc_Long %>%
-  filter(!(Contact_Record_Category == "Diagnosis/Review" &
-             Contact_Event_Term == "Hypertension" &
-             !(Patient_Name %in% bp_complete_patients))) %>%
-  filter(!(Contact_Record_Category == "Biomedical Assay" &
-             Contact_Event_Term %in% c("Systolic BP", "Diastolic BP") &
-             !(Patient_Name %in% bp_complete_patients)))
+  data_dictionary <- data_dictionary |>
+    dplyr::mutate(dplyr::across(dplyr::where(is.character), normalise_text))
 
-initial_events <- Pt_Proc_Long %>%
-  group_by(Patient_Name) %>%
-  summarise(
-    First_Diagnosis  = unique(Contact_Event_Term[Contact_Record_Category == "Diagnosis/Review"])[1],
-    Second_Diagnosis = unique(Contact_Event_Term[Contact_Record_Category == "Diagnosis/Review"])[2],
-    
-    First_Biomedical_Test  = unique(Contact_Event_Term[Contact_Record_Category == "Biomedical Assay"])[1],
-    Second_Biomedical_Test = unique(Contact_Event_Term[Contact_Record_Category == "Biomedical Assay"])[2],
-    
-    First_Drug_Name  = unique(Contact_Event_Term[Contact_Record_Category == "Medication"])[1],
-    Second_Drug_Name = unique(Contact_Event_Term[Contact_Record_Category == "Medication"])[2]
+  validate_theograph_data(patient_profile, events, clinical_notes)
+
+  timeline_events <- events |>
+    dplyr::filter(.data$Show_On_Timeline == "Yes")
+
+  series_catalogue <- timeline_events |>
+    dplyr::group_by(.data$Patient_ID, .data$Display_Series) |>
+    dplyr::summarise(
+      Event_Type = dplyr::first(.data$Event_Type),
+      Linked_Condition = dplyr::first(.data$Linked_Condition),
+      Display_Order = min(.data$Display_Order, na.rm = TRUE),
+      Event_Count = dplyr::n(),
+      .groups = "drop"
+    ) |>
+    dplyr::arrange(.data$Patient_ID, .data$Display_Order, .data$Display_Series)
+
+  qrisk2_events <- events |>
+    dplyr::filter(grepl("QRisk2", .data$Event_Name, ignore.case = TRUE)) |>
+    dplyr::arrange(.data$Patient_ID, .data$Event_Date)
+
+  structure(
+    list(
+      patient_profile = patient_profile,
+      events = events,
+      timeline_events = timeline_events,
+      series_catalogue = series_catalogue,
+      qrisk2_events = qrisk2_events,
+      clinical_notes = clinical_notes,
+      data_dictionary = data_dictionary,
+      source_path = input_path,
+      processed_at = Sys.time()
+    ),
+    class = c("theograph_data", "list")
   )
+}
 
-initial_events <- initial_events %>%
-  mutate(
-    First_Biomedical_Test = if_else(Patient_Name %in% bp_complete_patients, "Systolic BP", First_Biomedical_Test),
-    Second_Biomedical_Test = if_else(Patient_Name %in% bp_complete_patients, "Diastolic BP", Second_Biomedical_Test)
-  )
+write_theograph_rds <- function(data, output_path = NULL) {
+  configured_output_path <- Sys.getenv("THEOGRAPH_PROCESSED_PATH", unset = "")
+  default_output_path <- if (nzchar(configured_output_path)) {
+    configured_output_path
+  } else {
+    file.path(
+      Theograph_Project_Root, "data", "processed_extracts",
+      "Theograph_Processed_Data.rds"
+    )
+  }
+  output_path <- output_path %||% default_output_path
 
-Pt_Proc_Wide <- Pt_Proc_Long %>%
-  left_join(initial_events, by = "Patient_Name") %>%
-  group_by(Patient_Name, Contact_Event_Date) %>%
-  mutate(
-    Diagnosis_1 = if_else(Contact_Event_Term == First_Diagnosis, First_Diagnosis, NA_character_),
-    Diagnosis_2 = if_else(Contact_Event_Term == Second_Diagnosis, Second_Diagnosis, NA_character_),
-    
-    Biomedical_Test_1  = if_else(Contact_Event_Term == First_Biomedical_Test, First_Biomedical_Test, NA_character_),
-    Biomedical_Value_1 = if_else(Contact_Event_Term == First_Biomedical_Test, as.numeric(Value), NA_real_),
-    Biomedical_1_Units = if_else(Contact_Event_Term == First_Biomedical_Test, Units, NA_character_),
-    
-    Biomedical_Test_2  = if_else(Contact_Event_Term == Second_Biomedical_Test, Second_Biomedical_Test, NA_character_),
-    Biomedical_Value_2 = if_else(Contact_Event_Term == Second_Biomedical_Test, as.numeric(Value), NA_real_),
-    Biomedical_2_Units = if_else(Contact_Event_Term == Second_Biomedical_Test, Units, NA_character_),
-    
-    Drug_Name_1  = if_else(Contact_Event_Term == First_Drug_Name, First_Drug_Name, NA_character_),
-    Drug_1_Value = if_else(Contact_Event_Term == First_Drug_Name, as.numeric(Value), NA_real_),
-    Drug_1_Units = if_else(Contact_Event_Term == First_Drug_Name, Units, NA_character_),
-    
-    Drug_Name_2  = if_else(Contact_Event_Term == Second_Drug_Name, Second_Drug_Name, NA_character_),
-    Drug_2_Value = if_else(Contact_Event_Term == Second_Drug_Name, as.numeric(Value), NA_real_),
-    Drug_2_Units = if_else(Contact_Event_Term == Second_Drug_Name, Units, NA_character_)
-  ) %>%
-  ungroup() %>%
-  distinct() %>%
-  select(-any_of(c("is_metformin", "is_bp")))
+  dir.create(dirname(output_path), recursive = TRUE, showWarnings = FALSE)
+  saveRDS(data, output_path)
+  normalizePath(output_path, winslash = "/", mustWork = TRUE)
+}
 
-Pt_Proc_Wide$Contact_Event_Date <- as.Date(Pt_Proc_Wide$Contact_Event_Date, format = "%d/%m/%Y")
-Pt_Proc_Wide$Patient_DOB <- as.Date(Pt_Proc_Wide$Patient_DOB, format = "%d/%m/%Y")
+Theograph_Data <- process_theograph_data()
+Theograph_Processed_Path <- write_theograph_rds(Theograph_Data)
 
-# format explicitly as character strings for downstream consistency
-
-Pt_Proc_Wide$Contact_Event_Date <- format(Pt_Proc_Wide$Contact_Event_Date, "%Y-%m-%d")
-Pt_Proc_Wide$Patient_DOB <- format(Pt_Proc_Wide$Patient_DOB, "%Y-%m-%d")
-
-# saving processed data set
-
-write.xlsx(
-  Pt_Proc_Wide,
-  here("data", "processed_extracts", "Proc_Patient_Extract.xlsx"),
-  sheetName = "Processed Data",
-  colNames = TRUE,
-  append = FALSE
+message(
+  "Prepared ", nrow(Theograph_Data$patient_profile), " patients, ",
+  nrow(Theograph_Data$events), " events, ",
+  nrow(Theograph_Data$clinical_notes), " clinical notes and ",
+  nrow(Theograph_Data$series_catalogue),
+  " patient-specific timeline series."
 )
