@@ -16,7 +16,9 @@ The file `Theograph_Dashboard.rmd` will run the tool and create the necessary vi
 <br/>
 
 ## Extracting the DynAirX data
-The file `Raw_Patient_Extract.sql` will need to be ran on the appropriate DynAirX SQL dataset before the dashboard can be created. For external users, they will need to request access to this database with the Data Into Action (DIA) team. It is worth noting that the current script is configured to be used by an external user, and as such may need to be altered to be ran by a Data Into Action employee who has different permissions. The original `DIA_Original_Script.sql` provided by the DIA team is located within the `src/data_extraction/sql_scripts` subfolder.
+This step is obsolete as of this latest version of this tool. A preprocessed data file, 'Theograph_Synethetic_Patient_Dataset.xlsx' is now included for ease of loading.
+
+The file `Raw_Patient_Extract.sql` used to be required to be ran on the appropriate DynAirX SQL dataset before the dashboard can be created. For external users, they will need to request access to this database with the Data Into Action (DIA) team. It is worth noting that the current script is configured to be used by an external user, and as such may need to be altered to be ran by a Data Into Action employee who has different permissions. The original `DIA_Original_Script.sql` provided by the DIA team is located within the `src/data_extraction/sql_scripts` subfolder.
 
 <br/>
 
