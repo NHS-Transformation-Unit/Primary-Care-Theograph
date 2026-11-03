@@ -131,8 +131,6 @@ timeline_panel_height <- 105L
 timeline_panel_gap <- 6L
 timeline_plot_margin <- list(l = 265, r = 20, t = 50, b = 55)
 
-# Colour the actual SVG panel backgrounds after Plotly has drawn the chart.
-# Sort by screen position so alternation follows the displayed panel order.
 timeline_background_js <- "
 function(el, x) {
   function shadePanels() {
@@ -849,7 +847,6 @@ server <- function(input, output, session) {
     panel_count <- length(series_names)
     inner_height <- timeline_height() -
       timeline_plot_margin$t - timeline_plot_margin$b
-    # Each neighbouring panel contributes half of the small vertical gap.
     panel_margin <- timeline_panel_gap / (2 * inner_height)
     
     panel_annotations <- lapply(seq_along(series_names), function(index) {
@@ -909,8 +906,6 @@ server <- function(input, output, session) {
       height = timeline_height(),
       autosize = TRUE,
       hovermode = "closest",
-      # A different colour from the white page ensures Plotly creates a
-      # background rectangle for every panel; onRender then alternates them.
       plot_bgcolor = "#F1F3F5",
       annotations = c(panel_annotations, ldl_reference_annotations),
       legend = list(orientation = "h", x = 0, y = 1.02),
@@ -986,7 +981,6 @@ server <- function(input, output, session) {
       escape = TRUE,
       width = "100%",
       options = list(
-        # Keep the header and body together; CSS sets widths and wraps notes.
         pageLength = 10, scrollX = FALSE, autoWidth = FALSE,
         searching = FALSE
       )
